@@ -202,3 +202,66 @@ The previous sprints made artifacts compatible. This sprint bundles the result a
 - `references/canonical-vocab.md` — the canonical assertion vocabulary (kept in sync with validator)
 
 Registered via `skill_manage(action='create')` — `skill_view(name='spec-forge')` loads cleanly. End-to-end verified: `make spec-and-plan PROMPT="..."` → fresh NL prompt produces a validated spec on first Ollama attempt, then emits the full plan prompt to stdout. Corpus: 14/14 pass. Tests: 54/54 pass.
+
+---
+
+## Sprint 5 — Model provider switch: Ollama for training, cloud LLM for scoring
+
+The pipeline currently uses a cloud LLM (Nemotron) for both scoring and generation. For training the qwen2.5-coder:7b-instruct model, we must use the local Ollama instance. The cloud LLM is fine for scoring and review.
+
+**Deliverables:**
+- Add a `MODEL_PROVIDER` config in `run_pipeline.py` (or env var) with values `ollama` (default) / `cloud`
+- When `MODEL_PROVIDER=ollama`: use local Ollama URL and `qwen2.5-coder:7b-instruct` for generation
+- When `MODEL_PROVIDER=cloud`: use the cloud endpoint for scoring/review only
+- Document the switch in `README.md` and `SKILL.md`
+- Ensure `make generate` defaults to `ollama`; scoring can use either
+
+**Verify gate:**
+- `MODEL_PROVIDER=ollama make generate N=3` → generates specs using local qwen2.5-coder:7b-instruct
+- `MODEL_PROVIDER=cloud make score` → scores using cloud LLM
+- Both work without code changes, just env var
+
+---
+
+## Sprint 6 — Skill bundling: install into user skill directory
+
+The spec-forge skill lives in-repo at `skills/spec-forge/`. Users need a way to install it into their `~/.hermes/skills/` directory (or project-local `.hermes/skills/`) without cloning the whole repo.
+
+**Deliverables:**
+- Add `make install-skill` target that copies `skills/spec-forge/` → `~/.hermes/skills/spec-forge/` (or configurable `HERMES_SKILLS_DIR`)
+- The install should be idempotent (safe to re-run)
+- Add `make uninstall-skill` to remove it
+- Update `README.md` with install instructions
+- The installed skill must load via `skill_view(name='spec-forge')` from any session
+
+**Verify gate:**
+- `make install-skill` → skill appears in `skill_list()` under `spec-forge`
+- `skill_view(name='spec-forge')` loads without error from a fresh session
+- `make uninstall-skill` → skill removed
+- Re-install works cleanly
+
+---
+
+## Sprint 7 — Fine-tuning training pipeline for qwen2.5-coder:7b-instruct
+
+We now have a high-quality corpus (`data/training_data.jsonl`) with runbook-scored specs. This sprint builds the training pipeline to fine-tune qwen2.5-coder:7b-instruct on the Spec-Forge task.
+
+**Deliverables:**
+- `scripts/prepare_training_data.py` — converts `training_data.jsonl` → HF dataset format (prompt + spec_yaml pairs), applies chat template for qwen2.5
+- `scripts/train.py` — LoRA fine-tuning script using Unsloth or HuggingFace Trainer:
+  - Base model: `Qwen/Qwen2.5-Coder-7B-Instruct`
+  - LoRA config: r=16, alpha=32, dropout=0.1, target_modules=all-linear
+  - 3 epochs, batch size 2 (gradient accumulation), lr=2e-4, cosine schedule
+  - Output: `models/qwen2.5-coder-7b-specforge/` (adapter weights)
+- `scripts/merge_and_export.py` — merges adapter + exports GGUF (q4_k_m, q8_0) for Ollama
+- `scripts/eval_model.py` — evaluates fine-tuned model on held-out prompts:
+  - Pass rate through validator + scorer (target >80% on first attempt)
+  - Comparison against base model
+- `Makefile` targets: `make train`, `make merge`, `make eval-model`
+- Document in `docs/training.md` with hardware requirements (RTX 3050 8GB+ or similar)
+
+**Verify gate:**
+- `make train` completes without OOM on target hardware (RTX 3050 8GB with gradient checkpointing)
+- `make merge` produces valid GGUF files loadable in Ollama
+- `make eval-model` shows fine-tuned model achieves >80% first-attempt pass rate on held-out prompts vs <20% for base model
+- Trained model can be served via `ollama create specforge -f Modelfile` and used in `run_pipeline.py` by setting `MODEL=specforge`

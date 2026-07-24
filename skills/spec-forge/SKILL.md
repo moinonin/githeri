@@ -32,8 +32,9 @@ COMMAND_RUNWAY prompt natively accepts and translates into a plan.
 
 Use Spec-Forge when ALL of these are true:
 - The user gives a natural-language feature description (not a finished spec)
-- You have a local Ollama server running with `qwen2.5-coder:7b-instruct` OR
-  you are invoking from a context that has access to the repo's `make` targets
+- A local Ollama server is running with `qwen2.5-coder:7b-instruct`
+- The user's repo has `make spec` / `make spec-and-plan` targets (see the
+  githeri repo's Makefile for the reference implementation)
 - The output should feed the **command-runway-pattern** skill (the spec is
   the input to COMMAND_RUNWAY plan generation)
 
@@ -48,7 +49,7 @@ Do NOT use Spec-Forge when:
 Human NL → Spec-Forge → validated YAML spec → Human Review → command-runway-pattern → COMMAND_RUNWAY.md plan
 ```
 
-### Layer 1: Natural Language → Validated Spec
+### Layer 1: Natural Language to Validated Spec
 
 The user types a feature request. Spec-Forge sends it to a local Ollama model
 with a system prompt that:
@@ -61,7 +62,7 @@ with a system prompt that:
 4. On every attempt: extracts the YAML, runs the hardened validator, and on
    failure feeds the errors back into the next attempt (up to 3 retries)
 
-### Layer 2: Validated Spec → Plan Prompt
+### Layer 2: Validated Spec to Plan Prompt
 
 Once a spec passes the hardened gate, Spec-Forge emits a self-contained plan
 prompt: the `runbookprompt.md` content (with its ACCEPTED INPUT FORMATS
@@ -69,22 +70,16 @@ section) followed by the spec YAML wrapped in a ```yaml fence. An agent
 consuming this produces a COMMAND_RUNWAY plan that maps each `local_goals`
 entry to a concrete Local Verification row.
 
-### Layer 3: Plan → Execution
+### Layer 3: Plan to Execution
 
 The plan is handed to the `command-runway-pattern` skill for stage-by-stage
-execution. This is out of Scope-Forge's scope — it's where the spec-forge
+execution. This is out of Spec-Forge's scope — it's where the spec-forge
 handoff ends and the runway execution begins.
 
 ## The Canonical Spec Vocabulary (enforced by the validator)
 
 This is the contract between Spec-Forge and the COMMAND_RUNWAY skill. The
 validator (`scripts/validator.py`) rejects any spec that violates it.
-
-### Top-Level Shape
-
-A single-feature spec has these required top-level fields: `task_id`,
-`summary`, `local_goals`, `context`. Optional: `depends_on`,
-`global_goals_refs` (refs must be in `G1..G19`).
 
 ### Verification Types
 
@@ -93,7 +88,7 @@ Each `local_goals[].verification.type` must be one of:
 | Type | Required Fields | Required `expect` Keys | Valid `expect` Keys |
 |------|-----------------|------------------------|---------------------|
 | `http` | `method`, `url` | `status` | `status`, `body_regex`, `body_contains`, `json_schema`, `headers_contain` |
-| `cli` | `command` (≥3 chars) | `exit_code` | `exit_code`, `stdout_regex`, `stdout_contains`, `stdout_lines_min` |
+| `cli` | `command` (>=3 chars) | `exit_code` | `exit_code`, `stdout_regex`, `stdout_contains`, `stdout_lines_min` |
 | `file_exists` | `path` | (at least one content/exists check) | `content`, `content_contains`, `content_not_contains`, `exists` |
 | `manual` | `description` | (none — the description IS the check) | (none) |
 
@@ -102,9 +97,8 @@ Each `local_goals[].verification.type` must be one of:
 - **REQUEST headers** (`Authorization`, etc.) are a SIBLING of `expect`, under
   `verification`. Never inside `expect`.
 - **RESPONSE header assertions** go INSIDE `expect` as `headers_contain`, a map
-  of header-name → required-substring.
-- **`body`** lives beside `expect` under `verification`, not inside `expect`.
-- **Regex patterns inside string values MUST use single quotes** (e.g.
+  of header-name to required-substring.
+- Regex patterns inside string values MUST use single quotes (e.g.
   `Retry-After: '\d+'`). YAML double quotes reject backslash escapes like
   `\d`, `\w`, `\s`. The validator's pre-processor (`preprocess_yaml`) will
   auto-fix double-quoted regex values to single-quoted form, but emitting
@@ -118,7 +112,6 @@ Each `local_goals[].verification.type` must be one of:
 - No unknown top-level fields
 - Non-empty `task_id`
 - No `$ref` or `definitions` in `json_schema`
-- No code-like expressions in `body`
 
 ## How To Use This Skill
 
@@ -127,17 +120,19 @@ Each `local_goals[].verification.type` must be one of:
 - Python 3.11+ with a `.venv` containing PyYAML and requests
 - Ollama running locally with `qwen2.5-coder:7b-instruct` loaded
   (`OLLAMA_HOST=http://localhost:11434` by default)
+- A repo with the githeri Makefile targets (`make spec`, `make spec-and-plan`,
+  `make validate`, `make plan`)
 
 ### End-to-End From a Fresh Natural-Language Prompt
 
-From the repo root (where the Makefile lives):
+From a repo root with the githeri Makefile:
 
 ```bash
 # Generate a validated spec from a fresh NL feature request
 make spec PROMPT="Add a POST /register endpoint that accepts email and password"
 
-# End-to-end: fresh prompt → validated spec → COMMAND_RUNWAY plan prompt on stdout
-make spec-and-plan PROMPT="Add a PATCH endpoint to update user displayName and bio. Only the owner or admin can update."
+# End-to-end: fresh prompt -> validated spec -> COMMAND_RUNWAY plan prompt on stdout
+make spec-and-plan PROMPT="Add a PATCH endpoint to update user displayName and bio."
 ```
 
 The `make spec-and-plan` output is a self-contained prompt for a planning
@@ -145,36 +140,12 @@ agent: the runbookprompt.md content followed by the validated spec YAML.
 
 ### From an Existing Validated Spec
 
-If a spec already exists (e.g. in `data/training_data.jsonl` or as a
-standalone `.yaml` file):
-
 ```bash
-# Validate it
 make validate-one SPEC=path/to/spec.yaml
-
-# Emit the COMMAND_RUNWAY plan prompt for it
 make plan SPEC=path/to/spec.yaml
 # OR by index from the corpus:
 make plan SPEC=data/training_data.jsonl#0
 ```
-
-## Repository Layout (what this skill bundles)
-
-```
-skills/spec-forge/
-  SKILL.md                       (this file)
-  scripts/validator.py            the hardened spec gate (canonical vocab + gates + regex pre-processor)
-  scripts/plan_from_spec.py       extracts a validated spec and emits the plan prompt
-  scripts/run_pipeline.py         the orchestrator (NL → Ollama → YAML → validate → save)
-  scripts/prompt_generator.py     seed bank (used only for batch training)
-  runbookprompt.md                the COMMAND_RUNWAY plan-generation prompt (with ACCEPTED INPUT FORMATS)
-  runbook.md                      the runbook template (execution log layout)
-  references/
-    canonical-vocab.md            the canonical assertion vocabulary (kept in sync with validator.py)
-```
-
-The bundled `runbookprompt.md` and `runbook.md` are designed to feed into
-the `command-runway-pattern` skill.
 
 ## Using This Skill Inside a Coding Agent
 
@@ -188,37 +159,32 @@ When the agent receives a natural-language feature request, the flow is:
    and feed the stdout to the `command-runway-pattern` skill, which produces
    the COMMAND_RUNWAY plan and executes it stage-by-stage
 
-The skill is self-contained: it only depends on the repo's bundled
-`scripts/validator.py` and `scripts/plan_from_spec.py`. The seed bank is
-optional (only needed for batch training data generation).
+## Backend-First Ordering (Default)
+
+Spec-Forge specs default to backend-first stage ordering (API contracts,
+schemas, pipeline outputs precede UI). This inherits from
+`command-runway-pattern`. If the feature is UI-only, ignore this default.
 
 ## Known Limitations
 
 - The model occasionally still fails 3 retries on prompts where the spec
   structure is genuinely ambiguous (e.g. near-duplicate HTTP goals where the
   user's prompt doesn't clearly differentiate what each goal verifies).
-- The validator's pre-processor only handles the regex-in-double-quote case.
-  Other YAML-emit quirks (e.g. unquoted strings starting with special chars)
-  will still produce a parse failure.
+- The pre-processor only handles the regex-in-double-quote case.
 - The pipeline uses a fixed `qwen2.5-coder:7b-instruct` model. To use a
   different model, change `MODEL` in `scripts/run_pipeline.py`.
 
 ## Tests
 
-The validator and plan-assembly have full test coverage. From the repo root:
-
 ```bash
-make test   # runs 54 tests: 46 validator (canonical vocab + pre-processor) + 6 plan assembly
+make test   # 54 tests: validator + plan assembly
 ```
-
-All sprints (0 through 4) reaching green before this skill was packaged are
-documented in `docs/SPRINTS.md`.
 
 ## Origin
 
-Spec-Forge was built in the githeri repo across sprints 0-4, hardening the
-validator first (catching 7/10 stale pairs as defective), then fixing the
-generation prompt's vocabulary drift, then bridging the format to the
-COMMAND_RUNWAY skill, then wiring the full NL → spec → plan flow, then adding
-the regex-in-YAML pre-processor and the `headers_contain` canonical key.
-See `docs/SPRINTS.md` for the full evidence trail.
+Built in the githeri repo across sprints 0-4. See `docs/SPRINTS.md` for the
+full evidence trail. The validator was hardened first (catching 7/10 stale
+pairs as defective), then the generation prompt's vocabulary drift was
+fixed, then the format was bridged to the COMMAND_RUNWAY skill, then the
+full NL to spec to plan flow was wired, then the regex-in-YAML
+pre-processor and the `headers_contain` canonical key were added.

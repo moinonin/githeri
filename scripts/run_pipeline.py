@@ -6,6 +6,7 @@ import yaml
 import pathlib
 from prompt_generator import generate_prompt
 from validator import validate_spec
+from runbook_scorer import runbook_score
 
 # -------------------- CONFIG --------------------
 OLLAMA_URL = "http://localhost:11434/api/generate"
@@ -32,8 +33,8 @@ def load_skill_context():
 
 SKILL_CONTEXT = load_skill_context()
 
-FEW_SHOT_EXAMPLE = """
---- FEW-SHOT EXAMPLE ---
+FEW_SHOT_EXAMPLE = """---
+FEW-SHOT EXAMPLE ---
 Request: "Implement the Session lifecycle API: create, get, update, close, and expire sessions. Enforce the session state machine. Add auth middleware (JWT). Generate the OpenAPI spec. Integrate with the evidence pipeline when evidence is submitted."
 
 Spec YAML:
@@ -43,7 +44,35 @@ summary: "REST API for session lifecycle with state machine enforcement and evid
 depends_on: ["stage-1-core-models", "stage-2-pipeline"]
 local_goals:
   - id: L1
-    description: "POST /v1/sessions creates a session and returns sessionId"
+    description: "INSPECT: check existing session model and routes before adding endpoints"
+    verification:
+      type: file_exists
+      path: "src/models/Session.ts"
+      expect:
+        exists: true
+  - id: L2
+    description: "INSPECT: check existing API routes structure"
+    verification:
+      type: cli
+      command: "cat apps/api/src/routes/sessions.ts"
+      expect:
+        exit_code: 0
+  - id: L3
+    description: "CREATE: add POST /v1/sessions endpoint and session model extensions"
+    verification:
+      type: cli
+      command: "pnpm build --filter=@verified-attention/api"
+      expect:
+        exit_code: 0
+  - id: L4
+    description: "CREATE: add GET/PATCH/POST endpoints for session lifecycle"
+    verification:
+      type: cli
+      command: "pnpm build --filter=@verified-attention/api"
+      expect:
+        exit_code: 0
+  - id: L5
+    description: "VERIFY: POST /v1/sessions creates a session and returns sessionId"
     verification:
       type: http
       method: POST
@@ -59,8 +88,8 @@ local_goals:
           properties:
             sessionId: { type: string }
           required: [sessionId]
-  - id: L2
-    description: "GET /v1/sessions/:id returns the session with evidence and claims"
+  - id: L6
+    description: "VERIFY: GET /v1/sessions/:id returns the session with evidence and claims"
     verification:
       type: http
       method: GET
@@ -77,54 +106,15 @@ local_goals:
             evidence: { type: array }
             claims: { type: array }
           required: [sessionId, state]
-  - id: L3
-    description: "PATCH /v1/sessions/:id updates session config and heartbeat"
-    verification:
-      type: http
-      method: PATCH
-      url: http://localhost:3000/v1/sessions/{session_id}
-      headers:
-        Authorization: "Bearer {test_token}"
-      body:
-        config: { timeout: 3600 }
-      expect:
-        status: 200
-  - id: L4
-    description: "POST /v1/sessions/:id/evidence submits evidence to pipeline"
-    verification:
-      type: http
-      method: POST
-      url: http://localhost:3000/v1/sessions/{session_id}/evidence
-      headers:
-        Authorization: "Bearer {test_token}"
-      body:
-        type: "E-VISIBLE"
-        payload: { timestamp: 1620000000000, duration: 5000 }
-      expect:
-        status: 202
-  - id: L5
-    description: "POST /v1/sessions/:id/close transitions session to CLOSED"
-    verification:
-      type: http
-      method: POST
-      url: http://localhost:3000/v1/sessions/{session_id}/close
-      headers:
-        Authorization: "Bearer {test_token}"
-      expect:
-        status: 200
-        json_schema:
-          type: object
-          properties:
-            state: { const: CLOSED }
-  - id: L6
-    description: "Session state machine rejects invalid transitions"
+  - id: L7
+    description: "VERIFY: Session state machine rejects invalid transitions"
     verification:
       type: cli
       command: "pnpm test --filter=@verified-attention/api -- --testPathPattern=session-state-machine"
       expect:
         exit_code: 0
-  - id: L7
-    description: "OpenAPI spec is valid and contains session endpoints"
+  - id: L8
+    description: "VERIFY: OpenAPI spec is valid and contains session endpoints"
     verification:
       type: cli
       command: "npx @redocly/cli lint apps/api/openapi.yaml && grep '/v1/sessions' apps/api/openapi.yaml"
@@ -136,83 +126,8 @@ context:
   framework: Express
   orm: Prisma
   test_framework: Vitest
-
-task_id: list-sessions-endpoint
-summary: "GET /v1/sessions returns paginated list of sessions"
-local_goals:
-  - id: L1
-    description: "GET /v1/sessions with page/limit returns 200 and session array"
-    verification:
-      type: http
-      method: GET
-      url: http://localhost:3000/v1/sessions?page=1&limit=10
-      headers:
-        Authorization: "Bearer {test_token}"
-      expect:
-        status: 200
-        json_schema:
-          type: object
-          properties:
-            data:
-              type: array
-              items:
-                type: object
-                properties:
-                  id: { type: string }
-                  state: { type: string }
-                  contentId: { type: string }
-                  createdAt: { type: string }
-                required: [id, state, contentId]
-            total: { type: integer }
-            page: { type: integer }
-            limit: { type: integer }
-          required: [data, total]
-  - id: L2
-    description: "GET /v1/sessions without auth returns 401"
-    verification:
-      type: http
-      method: GET
-      url: http://localhost:3000/v1/sessions?page=1&limit=10
-      expect:
-        status: 401
-context:
-  language: TypeScript
-  framework: Express
-  orm: Prisma
-  test_framework: Vitest
-
-task_id: rate-limited-endpoint
-summary: "GET /v1/reports is rate-limited at 100/min; returns 429 with Retry-After when exceeded"
-local_goals:
-  - id: L1
-    description: "GET /v1/reports under the limit returns 200"
-    verification:
-      type: http
-      method: GET
-      url: http://localhost:3000/v1/reports
-      headers:
-        Authorization: "Bearer {test_token}"
-      expect:
-        status: 200
-  - id: L2
-    description: "GET /v1/reports over the limit returns 429 with a Retry-After response header"
-    verification:
-      type: http
-      method: GET
-      url: http://localhost:3000/v1/reports
-      headers:
-        Authorization: "Bearer {test_token}"
-      expect:
-        status: 429
-        headers_contain:
-          Retry-After: '\d+'
-context:
-  language: TypeScript
-  framework: Express
-  orm: Prisma
-  test_framework: Vitest
+```
 """
-
 SYSTEM_PROMPT = f"""
 You are a precise specification generator for a project that uses the COMMAND_RUNWAY methodology.
 Output ONLY a YAML document. No code, no commentary.
@@ -286,6 +201,14 @@ For manual:
 Context: TypeScript, Express, Prisma, Vitest. Auth middleware handles JWT.
 Context may also include language, framework, orm, test_framework keys.
 Global goals available: G1..G19 (refer to project charter).
+
+--- COMMAND_RUNWAY STRUCTURE (MANDATORY) ---
+Every spec MUST include at least one goal of each type in this order:
+1. INSPECT: file_exists verification OR CLI read-only command (cat, head, ls, test -f)
+2. CREATE/MODIFY: CLI build/install/migrate/generate command (pnpm build, npm run build, prisma migrate, etc.)
+3. VERIFY: HTTP endpoint check OR CLI test/lint/check command
+
+Goals should follow this progression: Inspect → Create/Modify → Verify
 {FEW_SHOT_EXAMPLE}
 Now produce ONLY the YAML specification for the following feature request.
 """
@@ -369,15 +292,35 @@ def generate_one_pair(prompt: str | None = None):
         print(f"  ❌ Failed after {MAX_RETRIES} retries. Skipping.\n")
         return None
 
-    # Save valid pair
-    pair = {
-        "prompt": original_prompt,
-        "spec_yaml": spec_yaml,
-    }
-    with open(OUTPUT_FILE, "a") as f:
-        f.write(json.dumps(pair) + "\n")
-    print(f"  ✅ Saved valid pair (task_id: {yaml.safe_load(spec_yaml).get('task_id', 'unknown')})\n")
-    return pair
+    # Score the spec
+    spec_dict = yaml.safe_load(spec_yaml)
+    spec_dict["_prompt"] = original_prompt
+    score, issues = runbook_score(spec_dict)
+
+    print(f"  📊 Runbook score: {score:.2f}")
+    if issues:
+        for issue in issues[:5]:
+            print(f"    - {issue}")
+        if len(issues) > 5:
+            print(f"    ... and {len(issues) - 5} more")
+
+    # Only save if score >= 0.75 — specs missing entire runway stages
+    # (inspect/create/verify) should be rejected, not just penalized.
+    SCORE_THRESHOLD = 0.75
+    if score >= SCORE_THRESHOLD:
+        pair = {
+            "prompt": original_prompt,
+            "spec_yaml": spec_yaml,
+            "runbook_score": score,
+            "score_details": issues,
+        }
+        with open(OUTPUT_FILE, "a") as f:
+            f.write(json.dumps(pair) + "\n")
+        print(f"  ✅ Saved valid pair (task_id: {spec_dict.get('task_id', 'unknown')}, score: {score:.2f})\n")
+        return pair
+    else:
+        print(f"  ⚠️  Score {score:.2f} below threshold ({SCORE_THRESHOLD}). Not saved.\n")
+        return None
 
 def generate_batch(count: int):
     print(f"🚀 Generating {count} prompt-spec pairs...\n")

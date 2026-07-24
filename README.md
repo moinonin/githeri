@@ -59,25 +59,43 @@ Outputs:
     ✓ human notified
 ```
 
+## Runbook Scoring System
+
+Every generated spec is scored against runbook-readiness criteria (see `docs/scoring_spec.md`). The scorer (`scripts/runbook_scorer.py`) evaluates five weighted categories:
+
+| Category | Weight | Key Checks |
+|----------|--------|------------|
+| **Intent & Goals** | 20% | Summary present, goals have descriptions, endpoint tasks have HTTP verification |
+| **Preconditions** | 15% | `depends_on` references valid globals/stages, Express+Prisma → stage-1-core-models, CLI tools declared in context |
+| **Command Runway Structure** | 30% | **Hard gate**: must have Inspect (file_exists/read CLI), Create/Modify (build CLI), Verify (HTTP/test CLI). Stage order: Inspect → Create → Verify |
+| **Verification Testability** | 25% | Concrete commands, explicit assertions (status/exit_code/content), reproducible URLs |
+| **Completion Coverage** | 10% | Prompt-mentioned status codes, tests, OpenAPI updates reflected in spec |
+
+**Hard gate**: If any of the three runway stages (Inspect, Create/Modify, Verify) is missing, the spec scores **0.0** and is rejected during generation.
+
 ## Repository layout
 
 ```
 scripts/
-  prompt_generator.py  — seed bank of realistic feature requests
-  run_pipeline.py      — orchestrator: seed prompt → Ollama → YAML → validate → save
-  validator.py         — the spec conformance gate (canonical vocabulary + quality)
-  plan_from_spec.py    — extracts a validated spec and emits the COMMAND_RUNWAY plan prompt
+  prompt_generator.py   — seed bank of realistic feature requests (475 prompts)
+  run_pipeline.py       — orchestrator: seed prompt → Ollama → YAML → validate → score → save
+  validator.py          — the spec conformance gate (canonical vocabulary + quality)
+  runbook_scorer.py     — runbook readiness scorer (5 categories, hard gate)
+  score_corpus.py       — scores all specs in training_data.jsonl
+  plan_from_spec.py     — extracts a validated spec and emits the COMMAND_RUNWAY plan prompt
 skills/
   runbookprompt.md      — the COMMAND_RUNWAY plan-generation prompt (accepts YAML + markdown)
   runbook.md            — the runbook template (execution log layout)
   command-runway-pattern/  — the full vendored skill
 docs/
-  spec-forge.yml       — gold project-level example (VAE, 22 stages, G1..G19)
-  spec-blueprint.md    — pipeline diagram
-  SPRINTS.md           — sprint breakdown + status
+  spec-forge.yml        — gold project-level example (VAE, 22 stages, G1..G19)
+  spec-blueprint.md     — pipeline diagram
+  SPRINTS.md            — sprint breakdown + status
+  scoring_spec.md       — runbook scoring specification
 tests/
-  test_validator.py        — 39 tests covering the canonical vocabulary + gates
-  test_plan_from_spec.py   — 6 tests covering spec extraction + prompt assembly
+  test_validator.py         — 39 tests covering the canonical vocabulary + gates
+  test_plan_from_spec.py    — 6 tests covering spec extraction + prompt assembly
+  test_runbook_scorer.py    — 24 tests covering the runbook scorer
 ```
 
 ## Usage
@@ -91,13 +109,16 @@ make generate N=10
 # 2. Validate the corpus against the hardened spec gate
 make validate
 
-# 3. Inspect a generated pair
+# 3. Score all specs against runbook criteria (hard gate at 0.75)
+make score
+
+# 4. Inspect a generated pair
 make check
 
-# 4. Emit the COMMAND_RUNWAY plan prompt for a validated spec
+# 5. Emit the COMMAND_RUNWAY plan prompt for a validated spec
 make plan SPEC=data/training_data.jsonl#0
 
-# 5. Run the test suite (validator + plan assembly)
+# 6. Run the test suite (validator + plan assembly + scorer)
 make test
 ```
 
@@ -140,3 +161,18 @@ that translates each `local_goals` entry into a concrete Local Verification row.
 - Python 3.11 (the repo ships a `.venv`; activate or use `.venv/bin/python`)
 - Ollama running locally with `qwen2.5-coder:7b-instruct` (for `make generate`)
 - `requirements.txt` deps (PyYAML, requests) — install via `pip install -r requirements.txt`
+
+## Make Targets Quick Reference
+
+| Target | Description |
+|--------|-------------|
+| `make generate N=10` | Generate N prompt-spec pairs from seed bank |
+| `make spec PROMPT="..."` | Generate validated spec from fresh NL prompt |
+| `make spec-and-plan PROMPT="..."` | End-to-end: NL → validated spec → plan prompt |
+| `make validate` | Validate all specs in corpus |
+| `make validate-one SPEC=x` | Validate single spec file |
+| `make score` | Score all specs against runbook criteria (hard gate) |
+| `make check` | Pretty-print first corpus entry |
+| `make plan SPEC=x` | Emit COMMAND_RUNWAY plan prompt for spec |
+| `make test` | Run full test suite (78 tests) |
+| `make clean` | Delete training_data.jsonl |

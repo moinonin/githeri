@@ -59,9 +59,10 @@ generate:
 	@echo "🚀 Generating $(N) prompt–spec pairs…"
 	$(PYTHON) scripts/run_pipeline.py $(N)
 
+i ?= 1
 check:
-	@echo "📋 Showing first entry from $(OUTPUT):"
-	@head -1 $(OUTPUT) | jq .
+	@echo "📋 Showing first $(i) entry from $(OUTPUT):"
+	@head -$(i) $(OUTPUT) | jq .
 
 # Validate every spec in the training corpus (the batch gate)
 validate:
@@ -94,6 +95,11 @@ plan:
 	@echo "📐 Emitting COMMAND_RUNWAY plan prompt for: $(SPEC)"
 	@$(PYTHON) scripts/plan_from_spec.py "$(SPEC)"
 
+# Score all specs in the training corpus
+score:
+	@echo "📊 Scoring all specs in $(OUTPUT) against runbook criteria..."
+	@$(PYTHON) scripts/score_corpus.py
+
 test:
 	@echo "🧪 Running the validator + plan test suite…"
 	$(PYTHON) -m pytest tests/ -v
@@ -110,6 +116,7 @@ help:
 	@echo "  make check                          Pretty-print first pair"
 	@echo "  make validate                       Validate all pairs against the hardened spec gate"
 	@echo "  make validate-one SPEC=x            Validate a single .yaml spec file"
+	@echo "  make score                          Score all specs against runbook criteria"
 	@echo "  make plan SPEC=<p>                  Emit the COMMAND_RUNWAY plan prompt for a spec"
 	@echo "                                      <p> = path/to/spec.yaml OR data/<f>.jsonl#<index>"
 	@echo "  make test                           Run the validator + plan test suite"
