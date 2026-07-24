@@ -1,4 +1,4 @@
-.PHONY: generate check clean validate validate-one plan spec test help
+.PHONY: generate check clean validate validate-one plan spec test help convert-chat train merge eval-model install-skill uninstall-skill
 
 N ?= 5
 PYTHON = .venv/bin/python
@@ -100,6 +100,37 @@ score:
 	@echo "📊 Scoring all specs in $(OUTPUT) against runbook criteria..."
 	@$(PYTHON) scripts/score_corpus.py
 
+# Convert training data to chat format for fine-tuning
+# Usage: make convert-chat [MIN_SCORE=0.75]
+convert-chat:
+	@echo "💬 Converting training data to chat format (min_score=$(MIN_SCORE))..."
+	@$(PYTHON) scripts/convert_to_chat.py --min-score $(MIN_SCORE)
+
+# Fine-tuning pipeline targets
+train:
+	@echo "🏋️  Starting LoRA fine-tuning..."
+	@$(PYTHON) scripts/train.py
+
+merge:
+	@echo "🔗 Merging adapter and exporting GGUF..."
+	@$(PYTHON) scripts/merge_and_export.py
+
+eval-model:
+	@echo "📊 Evaluating fine-tuned model..."
+	@$(PYTHON) scripts/eval_model.py
+
+# Skill installation
+install-skill:
+	@echo "📦 Installing spec-forge skill to ~/.hermes/skills/..."
+	@mkdir -p ~/.hermes/skills
+	@rsync -a --delete skills/spec-forge/ ~/.hermes/skills/spec-forge/
+	@echo "✅ Skill installed. Run 'skill_view(name=\"spec-forge\")' to verify."
+
+uninstall-skill:
+	@echo "🗑️  Uninstalling spec-forge skill..."
+	@rm -rf ~/.hermes/skills/spec-forge
+	@echo "✅ Skill removed."
+
 test:
 	@echo "🧪 Running the validator + plan test suite…"
 	$(PYTHON) -m pytest tests/ -v
@@ -119,5 +150,11 @@ help:
 	@echo "  make score                          Score all specs against runbook criteria"
 	@echo "  make plan SPEC=<p>                  Emit the COMMAND_RUNWAY plan prompt for a spec"
 	@echo "                                      <p> = path/to/spec.yaml OR data/<f>.jsonl#<index>"
+	@echo "  make convert-chat                   Convert training_data.jsonl → chat format for fine-tuning"
+	@echo "  make train                          Run LoRA fine-tuning (qwen2.5-coder-7b)"
+	@echo "  make merge                          Merge adapter + export GGUF for Ollama"
+	@echo "  make eval-model                     Evaluate fine-tuned model on held-out prompts"
+	@echo "  make install-skill                  Install spec-forge skill to ~/.hermes/skills/"
+	@echo "  make uninstall-skill                Remove spec-forge skill"
 	@echo "  make test                           Run the validator + plan test suite"
 	@echo "  make clean                          Delete output file"

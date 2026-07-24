@@ -73,6 +73,39 @@ Every generated spec is scored against runbook-readiness criteria (see `docs/sco
 
 **Hard gate**: If any of the three runway stages (Inspect, Create/Modify, Verify) is missing, the spec scores **0.0** and is rejected during generation.
 
+## Training Pipeline (Fine-tuning qwen2.5-coder:7b)
+
+```bash
+# 1. Generate validated specs with runbook scoring (requires Ollama + qwen2.5-coder:7b-instruct)
+make generate N=100
+
+# 2. Score all specs against runbook criteria (hard gate at 0.75)
+make score
+
+# 3. Export chat format for fine-tuning (filters specs below MIN_SCORE)
+make convert-chat              # default MIN_SCORE=0.75
+make convert-chat MIN_SCORE=0.9  # only high-quality specs
+
+# 4. LoRA fine-tuning (requires Unsloth + GPU)
+make train                     # LoRA on qwen2.5-coder-7b, outputs models/qwen2.5-coder-7b-specforge/
+
+# 5. Merge adapter + export GGUF for Ollama
+make merge                     # merged 16-bit + q4_k_m/q8_0 GGUF in models/qwen2.5-coder-7b-specforge-gguf/
+
+# 6. Evaluate fine-tuned model on held-out prompts
+make eval-model                # compares base vs fine-tuned pass rates
+
+# 7. Install spec-forge skill for agent use
+make install-skill             # copies to ~/.hermes/skills/spec-forge/
+```
+
+After fine-tuning, register the model in Ollama:
+```bash
+ollama create specforge -f models/qwen2.5-coder-7b-specforge-gguf/Modelfile
+```
+
+Then use it in the pipeline by setting `MODEL=specforge` in `scripts/run_pipeline.py` or via `MODEL_PROVIDER=ollama`.
+
 ## Repository layout
 
 ```
@@ -83,6 +116,10 @@ scripts/
   runbook_scorer.py     — runbook readiness scorer (5 categories, hard gate)
   score_corpus.py       — scores all specs in training_data.jsonl
   plan_from_spec.py     — extracts a validated spec and emits the COMMAND_RUNWAY plan prompt
+  convert_to_chat.py    — converts training_data.jsonl → chat format for fine-tuning
+  train.py              — LoRA fine-tuning script (Unsloth + qwen2.5-coder-7b)
+  merge_and_export.py   — merges adapter + exports GGUF (q4_k_m, q8_0) for Ollama
+  eval_model.py         — evaluates fine-tuned model on held-out prompts
 skills/
   runbookprompt.md      — the COMMAND_RUNWAY plan-generation prompt (accepts YAML + markdown)
   runbook.md            — the runbook template (execution log layout)
@@ -162,7 +199,7 @@ that translates each `local_goals` entry into a concrete Local Verification row.
 - Ollama running locally with `qwen2.5-coder:7b-instruct` (for `make generate`)
 - `requirements.txt` deps (PyYAML, requests) — install via `pip install -r requirements.txt`
 
-## Make Targets Quick Reference
+### Make Targets Quick Reference
 
 | Target | Description |
 |--------|-------------|
@@ -174,5 +211,11 @@ that translates each `local_goals` entry into a concrete Local Verification row.
 | `make score` | Score all specs against runbook criteria (hard gate) |
 | `make check` | Pretty-print first corpus entry |
 | `make plan SPEC=x` | Emit COMMAND_RUNWAY plan prompt for spec |
+| `make convert-chat [MIN_SCORE=0.75]` | Convert training_data.jsonl → chat format for fine-tuning (filters by runbook_score) |
+| `make train` | Run LoRA fine-tuning (qwen2.5-coder-7b) |
+| `make merge` | Merge adapter + export GGUF for Ollama |
+| `make eval-model` | Evaluate fine-tuned model on held-out prompts |
+| `make install-skill` | Install spec-forge skill to ~/.hermes/skills/ |
+| `make uninstall-skill` | Remove spec-forge skill |
 | `make test` | Run full test suite (78 tests) |
 | `make clean` | Delete training_data.jsonl |
