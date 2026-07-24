@@ -14,17 +14,32 @@ OUTPUT = data/training_data.jsonl
 
 # Generate a single validated spec from a fresh natural-language prompt.
 # Usage: make spec PROMPT="Add a POST /register endpoint that accepts email and password"
+# Alternative: echo "prompt here" > /tmp/prompt.txt && make spec PROMPT_FILE=/tmp/prompt.txt
 spec:
-	@if [ -z "$(PROMPT)" ]; then echo 'Usage: make spec PROMPT="<your feature request>"'; exit 2; fi
-	@echo "🚀 Processing fresh prompt → validated spec…"
-	@$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec PROMPT="<your feature request>" OR make spec PROMPT_FILE=/path/to/prompt.txt'; exit 2; fi
+	@if [ -n "$(PROMPT_FILE)" ]; then \
+		PROMPT="$$(cat $(PROMPT_FILE))"; \
+		echo "🚀 Processing fresh prompt from file → validated spec…"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT"; \
+	else \
+		echo "🚀 Processing fresh prompt → validated spec…"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"; \
+	fi
 
 # End-to-end: spec the feature THEN emit the plan prompt for it.
 # Requires Python 3.10+ for the walrus operator (used inline below).
+# Usage: make spec-and-plan PROMPT="Add a PATCH endpoint to update user displayName"
+# Alternative: echo "prompt" > /tmp/prompt.txt && make spec-and-plan PROMPT_FILE=/tmp/prompt.txt
 spec-and-plan:
-	@if [ -z "$(PROMPT)" ]; then echo 'Usage: make spec-and-plan PROMPT="<your feature request>"'; exit 2; fi
-	@echo "🚀 End-to-end: fresh prompt → validated spec → plan prompt"
-	@$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec-and-plan PROMPT="<your feature request>" OR make spec-and-plan PROMPT_FILE=/path/to/prompt.txt'; exit 2; fi
+	@if [ -n "$(PROMPT_FILE)" ]; then \
+		PROMPT="$$(cat $(PROMPT_FILE))"; \
+		echo "🚀 End-to-end: fresh prompt → validated spec → plan prompt"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT"; \
+	else \
+		echo "🚀 End-to-end: fresh prompt → validated spec → plan prompt"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"; \
+	fi
 	@echo ""
 	@echo "📐 Emitting plan prompt for the freshly-generated spec…"
 	@$(PYTHON) -c "import json,sys; \

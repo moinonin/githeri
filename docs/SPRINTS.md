@@ -174,8 +174,31 @@ The previous sprints made artifacts compatible. This sprint bundles the result a
 - Bundle the updated `runbookprompt.md` (from Sprint 2) and the runbook template.
 - Add a "Usage" section: how a human invokes the skill, what it produces, where the artifacts go.
 
+---
+
+## Sprint 4 — Skill packaging: self-contained skill that consumes validated YAML specs
+
+The previous sprints made artifacts compatible. This sprint bundles the result as a self-contained skill an agent can load without cloning the whole repo.
+
+**Deliverables:**
+- Author the skill `SKILL.md` that documents the full flow: human NL → spec YAML (via the prompt + validator) → human review → COMMAND_RUNWAY plan.
+- Bundle the validator, the updated `runbookprompt.md` (with ACCEPTED INPUT FORMATS), and the runbook template into the skill.
+- Add a "Usage" section: how a human invokes the skill, what it produces, where the artifacts go.
+
 **Verify gate:**
 - Load the skill via `skill_view` — confirm it loads cleanly, produces a validated spec for a novel prompt, and then a plan draft.
 - `make check` → still passes (exit 0).
 - `make test` → still all pass (exit 0).
 - The skill is self-contained: no dependency on the repo's other scripts except the bundled validator.
+
+**Status:** ✅ Complete. Created `skills/spec-forge/` as a standalone skill with:
+- `SKILL.md` — full documentation of the NL → spec → plan flow
+- `scripts/validator.py` — bundled hardened gate (canonical vocab + regex pre-processor)
+- `scripts/plan_from_spec.py` — bundled plan-prompt assembler
+- `scripts/run_pipeline.py` — bundled orchestrator
+- `scripts/prompt_generator.py` — bundled seed bank
+- `runbookprompt.md` — the COMMAND_RUNWAY plan-generation prompt (with ACCEPTED INPUT FORMATS)
+- `runbook.md` — the runbook template
+- `references/canonical-vocab.md` — the canonical assertion vocabulary (kept in sync with validator)
+
+Registered via `skill_manage(action='create')` — `skill_view(name='spec-forge')` loads cleanly. End-to-end verified: `make spec-and-plan PROMPT="..."` → fresh NL prompt produces a validated spec on first Ollama attempt, then emits the full plan prompt to stdout. Corpus: 14/14 pass. Tests: 54/54 pass.
