@@ -1,0 +1,259 @@
+spec_version: "1.0"
+project: "Verified Attention Engine (VAE)"
+based_on:
+  - docs/specs/0001-verified-attention-protocol.md
+  - docs/specs/0010-verified-attention-engine.md
+  - docs/specs/0000-project-charter.md
+
+global_goals:
+  G1: "VAP 1.0 spec published as GitHub Release vap-1.0-draft"
+  G2: "Core VAP data models implemented with Zod, 100% conformance test coverage (pnpm test:conformance)"
+  G3: "Evidence pipeline: ingestion→validation→normalization→dedup→feature extraction→store (pnpm test:integration --filter=@verified-attention/pipeline)"
+  G4: "Evidence store (append-only, indexed by session_id+EVID) with in-memory+persistent backends (pnpm test --filter=@verified-attention/store)"
+  G5: "Session lifecycle state machine enforced (conformance test session-state-machine)"
+  G6: "Attention model AUC ≥ 0.95 on held-out human vs bot data (tests/benchmarks/attention-model/)"
+  G7: "Fraud ensemble AUC ≥ 0.98, precision ≥ 0.95 at 0.1% FPR (tests/benchmarks/fraud-model/)"
+  G8: "Verification Engine: policy evaluation, confidence, deterministic decisions (conformance verification-full)"
+  G9: "Proof of Attention: Ed25519 signing, 7 mandatory fields, append-only store (conformance proof-full)"
+  G10: "Reward pipeline: eligibility→pricing→budget→settlement prep (integration test reward-flow)"
+  G11: "Browser SDK < 50 KB gzipped, produces VAP-conformant evidence (pnpm build --filter=sdk-browser + conformance)"
+  G12: "Browser Extension MV3 published to Chrome/Firefox/Edge stores"
+  G13: "Public REST + Streaming APIs with OpenAPI 3.1, generated SDKs (pnpm openapi:generate + pnpm sdk:generate)"
+  G14: "Security: OAuth2/OIDC, mTLS, RBAC, secrets, encryption at rest, pen-test clean"
+  G15: "Privacy: consent, minimisation, pseudonymisation, retention, DSR API, DPIA sign-off"
+  G16: "Observability: Prometheus, Grafana, OpenTelemetry tracing, alerting"
+  G17: "Load test: 10K evidence/sec sustained 1hr (p99<500ms), 10K proofs/min (p99<1s)"
+  G18: "Chaos test: pipeline node kill → recovery <30s, zero evidence loss"
+  G19: "All CI gates pass: lint, typecheck, test, build, conformance"
+
+context:
+  language: "TypeScript"
+  runtime: "Node.js ≥20"
+  package_manager: "pnpm ≥9"
+  monorepo_tool: "Turborepo"
+  frameworks:
+    testing: "Vitest"
+    validation: "Zod"
+  monorepo_structure:
+    packages: [core, pipeline, store, verification, crypto, ml/attention, ml/fraud, sdk/browser, sdk/mobile, sdk/desktop, extension, api, verifier, reward, analytics, cli, conformance, observability, auth, security, privacy]
+    apps: [api, verifier, developer-portal, api-gateway, ml-serving/attention, ml-serving/fraud]
+
+tasks:
+  - id: "stage-0-foundation"
+    summary: "Initialize monorepo, CI/CD, ADR-001, prototype ingestion"
+    depends_on: []
+    local_goals:
+      - id: L0-1
+        description: "All dependencies install cleanly"
+        verification: { type: cli, command: "pnpm install", expect: { exit_code: 0 } }
+      - id: L0-2
+        description: "All packages build successfully"
+        verification: { type: cli, command: "pnpm build", expect: { exit_code: 0 } }
+      - id: L0-3
+        description: "TypeScript typecheck passes with no errors"
+        verification: { type: cli, command: "pnpm typecheck", expect: { exit_code: 0, stdout_contains: "0 errors" } }
+      - id: L0-4
+        description: "Linter finds no issues"
+        verification: { type: cli, command: "pnpm lint", expect: { exit_code: 0 } }
+      - id: L0-5
+        description: "Tests pass (initially empty suite)"
+        verification: { type: cli, command: "pnpm test", expect: { exit_code: 0 } }
+      - id: L0-6
+        description: "Prototype ingestion script runs without error"
+        verification: { type: cli, command: "pnpm tsx scripts/prototype-ingest.ts", expect: { exit_code: 0 } }
+    global_goals_refs: [] # foundation, no direct global mapping yet
+
+  - id: "stage-1-core-models"
+    summary: "Implement VAP Evidence, Observation, Session, Claim, Proof with Zod schemas, tests ≥80% coverage"
+    depends_on: ["stage-0-foundation"]
+    local_goals:
+      - id: L1-1
+        description: "Core package builds"
+        verification: { type: cli, command: "pnpm build --filter=@verified-attention/core", expect: { exit_code: 0 } }
+      - id: L1-2
+        description: "Core package typechecks"
+        verification: { type: cli, command: "pnpm typecheck --filter=@verified-attention/core", expect: { exit_code: 0 } }
+      - id: L1-3
+        description: "Core tests pass with ≥80% coverage"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/core --coverage", expect: { exit_code: 0, stdout_regex: "All files\\s+\\|\\s+8[0-9]\\." } }
+    global_goals_refs: ["G2"]
+
+  - id: "stage-2-pipeline"
+    summary: "Evidence processing pipeline: validation, normalization, dedup, feature extraction, enrichment, store"
+    depends_on: ["stage-1-core-models"]
+    local_goals:
+      - id: L2-1
+        description: "Pipeline package builds"
+        verification: { type: cli, command: "pnpm build --filter=@verified-attention/pipeline", expect: { exit_code: 0 } }
+      - id: L2-2
+        description: "Store package builds"
+        verification: { type: cli, command: "pnpm build --filter=@verified-attention/store", expect: { exit_code: 0 } }
+      - id: L2-3
+        description: "Pipeline and store unit tests pass"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/pipeline --filter=@verified-attention/store", expect: { exit_code: 0 } }
+      - id: L2-4
+        description: "Integration test: pipeline → store works"
+        verification: { type: cli, command: "pnpm test:integration --filter=@verified-attention/pipeline", expect: { exit_code: 0 } }
+      - id: L2-5
+        description: "Conformance: evidence validation tests pass"
+        verification: { type: cli, command: "pnpm test:conformance --filter=@verified-attention/pipeline", expect: { exit_code: 0 } }
+    global_goals_refs: ["G3", "G4"]
+
+  - id: "stage-3-session-api"
+    summary: "Session lifecycle REST API with state machine enforcement"
+    depends_on: ["stage-1-core-models", "stage-2-pipeline"]
+    local_goals:
+      - id: L3-1
+        description: "API package builds"
+        verification: { type: cli, command: "pnpm build --filter=@verified-attention/api", expect: { exit_code: 0 } }
+      - id: L3-2
+        description: "API tests pass"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/api", expect: { exit_code: 0 } }
+      - id: L3-3
+        description: "OpenAPI spec is valid"
+        verification: { type: cli, command: "npx @redocly/cli lint apps/api/openapi.yaml", expect: { exit_code: 0 } }
+    global_goals_refs: ["G5"]
+
+  - id: "stage-4-vap-conformance"
+    summary: "Finalize VAP 1.0 spec, build conformance test framework, publish vap-1.0-draft"
+    depends_on: ["stage-1-core-models"]
+    local_goals:
+      - id: L4-1
+        description: "Conformance tests run against core package"
+        verification: { type: cli, command: "pnpm test:conformance", expect: { exit_code: 0 } }
+      - id: L4-2
+        description: "VAP spec has no TODOs (manual check)"
+        verification: { type: file_exists, path: "docs/specs/0001-verified-attention-protocol.md", expect: { content_not_contains: "TODO" } }
+      - id: L4-3
+        description: "VAP 1.0-draft release created"
+        verification: { type: cli, command: "gh release view vap-1.0-draft --json tagName", expect: { exit_code: 0 } }
+    global_goals_refs: ["G1"]
+
+  - id: "stage-5-verification-engine"
+    summary: "Claim model, confidence model, verification engine, policy engine, deterministic outcomes"
+    depends_on: ["stage-1-core-models", "stage-4-vap-conformance"]
+    local_goals:
+      - id: L5-1
+        description: "Verification package builds"
+        verification: { type: cli, command: "pnpm build --filter=@verified-attention/verification", expect: { exit_code: 0 } }
+      - id: L5-2
+        description: "Verification tests pass"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/verification", expect: { exit_code: 0 } }
+      - id: L5-3
+        description: "Conformance: VAP Section 9 100%"
+        verification: { type: cli, command: "pnpm test:conformance --filter=@verified-attention/verification", expect: { exit_code: 0 } }
+      - id: L5-4
+        description: "Determinism test: same input → same confidence"
+        verification: { type: cli, command: "pnpm test:determinism", expect: { exit_code: 0 } }
+    global_goals_refs: ["G8"]
+
+  - id: "stage-6-proof-generation"
+    summary: "Proof of Attention: Ed25519 signing, key management, proof store, webhooks"
+    depends_on: ["stage-5-verification-engine"]
+    local_goals:
+      - id: L6-1
+        description: "Crypto sign/verify roundtrip"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/crypto", expect: { exit_code: 0 } }
+      - id: L6-2
+        description: "Proof store append-only, queryable"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/store-proof", expect: { exit_code: 0 } }
+      - id: L6-3
+        description: "Verifier service: proof gen + webhook delivery"
+        verification: { type: cli, command: "pnpm test --filter=@verified-attention/verifier", expect: { exit_code: 0 } }
+      - id: L6-4
+        description: "Conformance: VAP Section 10 + Appendix A 100%"
+        verification: { type: cli, command: "pnpm test:conformance --filter=@verified-attention/verifier", expect: { exit_code: 0 } }
+      - id: L6-5
+        description: "Load test: 10K proofs/min, p99 < 1s"
+        verification: { type: cli, command: "pnpm test:load --filter=@verified-attention/verifier", expect: { exit_code: 0, stdout_regex: "p99.*< 1000" } }
+    global_goals_refs: ["G9", "G17"]
+
+  - id: "stage-7-pipeline-hardening"
+    summary: "Production hardening: metrics, tracing, DLQ, load/chaos tests"
+    depends_on: ["stage-2-pipeline"]
+    local_goals:
+      - id: L7-1
+        description: "Prometheus metrics exposed"
+        verification: { type: http, url: "http://localhost:9090/metrics", expect: { status: 200, body_contains: "pipeline" } }
+      - id: L7-2
+        description: "Traces visible in Jaeger/Tempo"
+        verification: { type: manual, description: "Full pipeline trace visible in tracing UI" }
+      - id: L7-3
+        description: "Load test: 10K evidence/sec, p99 < 500ms, 0% loss"
+        verification: { type: cli, command: "pnpm test:load:pipeline-10k", expect: { exit_code: 0, stdout_regex: "p99.*< 500" } }
+      - id: L7-4
+        description: "Chaos test: recovery < 30s, zero loss"
+        verification: { type: cli, command: "pnpm test:chaos:pipeline-resilience", expect: { exit_code: 0 } }
+    global_goals_refs: ["G17", "G18"]
+
+  # ... (remaining stages 8–21 would follow the same pattern, each with local_goals derived from their Local Verification tables and global_goals_refs referencing G6, G7, G10–G16, G19)
+
+  - id: "stage-21-beta-rc"
+    summary: "Beta program, feedback integration, VAE 1.0 RC"
+    depends_on: ["stage-19-public-api", "stage-20-onboarding"]
+    local_goals:
+      - id: L21-1
+        description: "Beta publishers integrated, sessions/proofs active"
+        verification: { type: manual, description: "Monitoring dashboards show active sessions and proofs" }
+      - id: L21-2
+        description: "Top 10 beta feedback items fixed"
+        verification: { type: cli, command: "git log --oneline --since='beta start'", expect: { stdout_lines_min: 10 } }
+      - id: L21-3
+        description: "Load test with beta traffic at 2x passes"
+        verification: { type: cli, command: "pnpm test:load:beta-traffic", expect: { exit_code: 0 } }
+      - id: L21-4
+        description: "Launch checklist all checked"
+        verification: { type: file_exists, path: "docs/launch/checklist.md", expect: { content_not_contains: "[ ]" } }
+      - id: L21-5
+        description: "VAE 1.0 RC GitHub release exists"
+        verification: { type: cli, command: "gh release view vae-1.0-rc1 --json tagName", expect: { exit_code: 0 } }
+    global_goals_refs: ["G1–G19"]
+
+  # Global Verification Task (final gate)
+  - id: "global-verification"
+    summary: "Full project validation after all stages"
+    depends_on: ["stage-21-beta-rc"]
+    local_goals: # extracted from Global Verification table
+      - id: GV1
+        description: "Full build"
+        verification: { type: cli, command: "pnpm build", expect: { exit_code: 0 } }
+      - id: GV2
+        description: "Full test suite"
+        verification: { type: cli, command: "pnpm test", expect: { exit_code: 0 } }
+      - id: GV3
+        description: "Typecheck zero errors"
+        verification: { type: cli, command: "pnpm typecheck", expect: { exit_code: 0 } }
+      - id: GV4
+        description: "Lint zero errors"
+        verification: { type: cli, command: "pnpm lint", expect: { exit_code: 0 } }
+      - id: GV5
+        description: "Format check no changes"
+        verification: { type: cli, command: "pnpm format --check", expect: { exit_code: 0 } }
+      - id: GV6
+        description: "Conformance 100% VAP coverage"
+        verification: { type: cli, command: "pnpm test:conformance", expect: { exit_code: 0 } }
+      - id: GV7
+        description: "All load tests pass"
+        verification: { type: cli, command: "pnpm test:load", expect: { exit_code: 0 } }
+      - id: GV8
+        description: "All chaos tests pass"
+        verification: { type: cli, command: "pnpm test:chaos", expect: { exit_code: 0 } }
+      - id: GV9
+        description: "Security: pen-test clean, SBOM current"
+        verification: { type: file_exists, path: "docs/security/pentest-report.md", expect: { content_contains: "Critical: 0" } }
+      - id: GV10
+        description: "Privacy: DPIA signed, conformance passes"
+        verification: { type: file_exists, path: "docs/privacy/dpia-final.md", expect: { content_contains: "Approved" } }
+      - id: GV11
+        description: "Observability: dashboards render, alerts fire"
+        verification: { type: manual, description: "Grafana dashboards operational" }
+      - id: GV12
+        description: "Documentation complete"
+        verification: { type: file_exists, path: "docs/README.md", expect: { exists: true } }
+      - id: GV13
+        description: "VAP spec v1.0 published"
+        verification: { type: cli, command: "gh release view vap-1.0 --json tagName", expect: { exit_code: 0 } }
+      - id: GV14
+        description: "VAE 1.0 release tagged"
+        verification: { type: cli, command: "gh release view vae-1.0 --json tagName", expect: { exit_code: 0 } }
+    global_goals_refs: ["G1–G19"]
