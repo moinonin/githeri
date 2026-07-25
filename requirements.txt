@@ -22,3 +22,4 @@ torch>=2.11.0
 huggingface_hub>=0.23.0
 
 # Evaluation deps (Ollama API already covered by requests)
+tqdm>=4.66.0

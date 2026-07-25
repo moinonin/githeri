@@ -312,13 +312,20 @@ def generate_one_pair(prompt=None):
 
 
 def generate_batch(count):
+    from tqdm import tqdm
+
     print("\U0001f680 Generating {0} prompt-spec pairs...\n".format(count))
     created = 0
     failed = 0
     consecutive_fails = 0
 
+    pbar = tqdm(total=count, desc="Generating", unit="spec",
+                bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}]  ✓{postfix}")
+    pbar.set_postfix_str("valid=0 fail=0")
+
     while created + failed < count:
         res = generate_one_pair()
+        pbar.update(1)
         if res.get("validated"):
             created += 1
             consecutive_fails = 0
@@ -326,9 +333,12 @@ def generate_batch(count):
             failed += 1
             consecutive_fails += 1
             if consecutive_fails >= MAX_CONSECUTIVE_FAILS:
+                pbar.close()
                 print("\u274c Aborting after {0} consecutive failures.".format(consecutive_fails))
                 break
+        pbar.set_postfix_str("valid={0} fail={1}".format(created, failed))
 
+    pbar.close()
     print("\U0001f3c1 Done. {0} valid saved to {1}, {2} failed saved to {3}".format(
         created, OUTPUT_FILE, failed, FAILED_FILE))
 
