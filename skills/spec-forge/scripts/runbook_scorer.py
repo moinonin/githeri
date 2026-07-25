@@ -96,7 +96,7 @@ def prompt_heuristic_score(prompt: str, spec: dict) -> float:
             for g in goals
         )
         if not has_http_status:
-            score -= 0.3
+            score -= 0.8  # Very strong penalty
 
     # Check for test mentions
     if "test" in prompt_lower:
@@ -106,7 +106,7 @@ def prompt_heuristic_score(prompt: str, spec: dict) -> float:
             for g in goals
         )
         if not has_test_verify:
-            score -= 0.3
+            score -= 0.8  # Very strong penalty
 
     # Check for OpenAPI/spec mentions
     if any(term in prompt_lower for term in ["openapi", "swagger"]):
@@ -116,7 +116,18 @@ def prompt_heuristic_score(prompt: str, spec: dict) -> float:
             for g in goals
         )
         if not has_openapi_check:
-            score -= 0.3
+            score -= 0.7  # Strong penalty
+
+    # Check for scheduled/cron mentions
+    if any(term in prompt_lower for term in ["scheduled", "cron", "background", "worker"]):
+        has_scheduled = any(
+            "cron" in g.get("verification", {}).get("command", "") or
+            "schedule" in g.get("verification", {}).get("command", "") or
+            g.get("verification", {}).get("type") == "manual"
+            for g in goals
+        )
+        if not has_scheduled:
+            score -= 0.6
 
     return max(0.0, min(1.0, score))
 
@@ -135,11 +146,11 @@ def runbook_score(spec):
     # 1. Intent & Goals (20%)
     intent_score = 1.0
     if not spec.get("summary"):
-        intent_score -= 0.3
+        intent_score -= 0.8
         details.append("Summary missing")
     for g in goals:
         if not g.get("description"):
-            intent_score -= 0.1
+            intent_score -= 0.4
             details.append(f"Goal {g.get('id')} missing description")
 
     # Endpoint task should have HTTP verification
@@ -147,24 +158,35 @@ def runbook_score(spec):
     if ("endpoint" in summary_lower or
         any("endpoint" in g.get("description", "").lower() for g in goals)):
         if not any(g.get("verification", {}).get("type") == "http" for g in goals):
-            intent_score -= 0.3
+            intent_score -= 0.8
             details.append("Endpoint task lacks HTTP verification")
 
-    score -= 0.20 * (1 - max(0.0, intent_score))
+    # Database/model task should have file_exists or cli create
+    if any(kw in summary_lower for kw in ["model", "schema", "database", "table", "entity"]):
+        if not any(
+            g.get("verification", {}).get("type") == "file_exists" or
+            (g.get("verification", {}).get("type") == "cli" and any(p in g.get("verification", {}).get("command", "") for p in CREATE_MODIFY_PATTERNS))
+            for g in goals
+        ):
+            intent_score -= 0.7
+            details.append("Database/model task lacks file_exists or create verification")
+
+    intent_score = max(0.0, intent_score)
+    score -= 0.20 * (1 - intent_score)
 
     # 2. Preconditions (15%)
     precond_score = 1.0
     deps = spec.get("depends_on", []) or []
     for d in deps:
         if d not in VALID_GLOBAL_GOALS and not d.startswith("stage-"):
-            precond_score -= 0.2
+            precond_score -= 0.8
             details.append(f"Unknown dependency '{d}'")
 
     context = spec.get("context", {})
     context_str = str(context).lower()
     if "express" in context_str and "prisma" in context_str:
         if not any(d == "stage-1-core-models" for d in deps):
-            precond_score -= 0.2
+            precond_score -= 0.8
             details.append("Should depend on stage-1-core-models")
 
     tools_used = set()
@@ -177,8 +199,8 @@ def runbook_score(spec):
             if "gradle" in cmd:
                 tools_used.add("gradle")
     if tools_used and not any(t in context_str for t in tools_used):
-        precond_score -= 0.1
-        details.append("Context missing some tools used in commands")
+        precond_score -= 0.8  # Harsh penalty - context mismatch is serious
+        details.append("Context missing tools used in commands")
 
     score -= 0.15 * (1 - max(0.0, precond_score))
 
@@ -193,13 +215,13 @@ def runbook_score(spec):
     has_verify = _check_verify(goals)
 
     if not has_inspect:
-        struct_score -= 0.25
+        struct_score -= 0.8
         details.append("No inspect goal (file_exists or read-only CLI)")
     if not has_create:
-        struct_score -= 0.45
+        struct_score -= 0.9  # Very harsh - create is essential
         details.append("No create/modify goal (build/install/migrate CLI)")
     if not has_verify:
-        struct_score -= 0.30
+        struct_score -= 0.9  # Very harsh - verify is essential
         details.append("No verify goal (HTTP endpoint or test/lint CLI)")
 
     # Check stage order: inspect -> create -> verify (only if all three stages present)
@@ -229,13 +251,13 @@ def runbook_score(spec):
                     verify_idx = i
 
         if inspect_idx != -1 and create_idx != -1 and inspect_idx > create_idx:
-            struct_score -= 0.15
+            struct_score -= 0.4
             details.append("Inspect goal appears after create goal")
         if create_idx != -1 and verify_idx != -1 and create_idx > verify_idx:
-            struct_score -= 0.15
+            struct_score -= 0.4
             details.append("Create goal appears after verify goal")
         if inspect_idx != -1 and verify_idx != -1 and inspect_idx > verify_idx:
-            struct_score -= 0.10
+            struct_score -= 0.3
             details.append("Inspect goal appears after verify goal")
 
     # Hard gate: if any of the three required stages is missing, spec is not runbook-ready
@@ -244,32 +266,34 @@ def runbook_score(spec):
 
     struct_score = max(0.0, struct_score)
     score -= 0.30 * (1 - struct_score)
+
+    # 4. Verification Testability (25%)
     test_score = 1.0
     for g in goals:
         ver = g.get("verification", {})
         vtype = ver.get("type")
         if vtype == "http":
             if not ver.get("url"):
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing URL")
             if "expect" not in ver or "status" not in ver.get("expect", {}):
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing expected status")
         elif vtype == "cli":
             if not ver.get("command"):
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing CLI command")
             expect = ver.get("expect", {})
             if "exit_code" not in expect:
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing required expect.exit_code")
         elif vtype == "file_exists":
             if not ver.get("path"):
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing file path")
             expect = ver.get("expect", {})
             if not any(k in expect for k in REQUIRED_EXPECT_KEYS["file_exists"]):
-                test_score -= 0.1
+                test_score -= 0.4
                 details.append(f"Goal {g['id']} missing required expect check (content/exists)")
 
     if test_score < 0:

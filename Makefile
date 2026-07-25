@@ -1,4 +1,4 @@
-.PHONY: generate check clean validate validate-one plan spec test help convert-chat train merge eval-model install-skill uninstall-skill
+.PHONY: generate check clean validate validate-one plan spec test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
 
 N ?= 5
 PYTHON = .venv/bin/python
@@ -98,7 +98,12 @@ plan:
 # Score all specs in the training corpus
 score:
 	@echo "📊 Scoring all specs in $(OUTPUT) against runbook criteria..."
-	@$(PYTHON) scripts/score_corpus.py
+	@$(PYTHON) scripts/score_corpus.py --file $(OUTPUT)
+
+# Score failed specs (invalid specs saved separately)
+score-failed:
+	@echo "📊 Scoring failed specs in data/failed_specs.jsonl..."
+	@$(PYTHON) scripts/score_corpus.py --file data/failed_specs.jsonl --threshold 0.0
 
 # Convert training data to chat format for fine-tuning
 # Usage: make convert-chat [MIN_SCORE=0.75]
@@ -118,6 +123,16 @@ merge:
 eval-model:
 	@echo "📊 Evaluating fine-tuned model..."
 	@$(PYTHON) scripts/eval_model.py
+
+# Upload model to HuggingFace Hub
+# Requires HF_TOKEN in .env file: echo "HF_TOKEN=hf_your_token" > .env
+# Usage: make upload-hf REPO=githeri/qwen2.5-coder-7b-specforge
+#         make upload-hf REPO=githeri/qwen2.5-coder-7b-specforge PRIVATE=1
+HF_REPO ?= githeri/qwen2.5-coder-7b-specforge
+upload-hf:
+	@if [ ! -f .env ] || ! grep -q "HF_TOKEN" .env; then echo '❌ HF_TOKEN not found. Create .env: echo "HF_TOKEN=hf_your_token" > .env'; exit 1; fi
+	@echo "☁️  Uploading model to HuggingFace Hub: $(HF_REPO)"
+	@$(PYTHON) scripts/upload_to_hf.py --model-dir models/qwen2.5-coder-7b-specforge --repo $(HF_REPO) $(if $(PRIVATE),--private)
 
 # Skill installation
 install-skill:
@@ -148,12 +163,14 @@ help:
 	@echo "  make validate                       Validate all pairs against the hardened spec gate"
 	@echo "  make validate-one SPEC=x            Validate a single .yaml spec file"
 	@echo "  make score                          Score all specs against runbook criteria"
+	@echo "  make score-failed                   Score failed specs (data/failed_specs.jsonl)"
 	@echo "  make plan SPEC=<p>                  Emit the COMMAND_RUNWAY plan prompt for a spec"
 	@echo "                                      <p> = path/to/spec.yaml OR data/<f>.jsonl#<index>"
 	@echo "  make convert-chat                   Convert training_data.jsonl → chat format for fine-tuning"
 	@echo "  make train                          Run LoRA fine-tuning (qwen2.5-coder-7b)"
 	@echo "  make merge                          Merge adapter + export GGUF for Ollama"
 	@echo "  make eval-model                     Evaluate fine-tuned model on held-out prompts"
+	@echo "  make upload-hf REPO=<hf-repo>       Upload model to HuggingFace Hub (requires HF_TOKEN in .env)"
 	@echo "  make install-skill                  Install spec-forge skill to ~/.hermes/skills/"
 	@echo "  make uninstall-skill                Remove spec-forge skill"
 	@echo "  make test                           Run the validator + plan test suite"
