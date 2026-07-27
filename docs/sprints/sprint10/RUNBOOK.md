@@ -1,7 +1,7 @@
-# COMMAND_RUNWAY: sprint9-ci-cd-integration
+# COMMAND_RUNWAY: sprint10-observability-dashboard
 
 **Status:** [ Draft Plan | In-Flight | Verified | Blocked ]
-**Derived From Spec:** sprint9-ci-cd-integration.yaml
+**Derived From Spec:** sprint10-observability-dashboard.yaml
 **Generated With:** command-runway-planner
 **Agent/Responsible:** AI Execution Agent + Human Reviewer
 **Created:** 2026-07-27
@@ -32,12 +32,12 @@ None specified
 
 ### Task-Local Goals
 _Once this feature is done, I should be able to..._
-- L1: CREATE: CI/CD skill with PR creation, check execution, merge, rollback
-- L2: CREATE: GitHub Actions workflow for autonomous PRs
-- L3: CREATE: PR creation script from spec changes
-- L4: CREATE: Check runner (lint, typecheck, test, build, security)
-- L5: CREATE: Auto-merge on green, rollback on failure
-- L6: VERIFY: Full cycle - spec to PR to checks to merge
+- L1: CREATE: Observability skill with metrics collection and dashboard
+- L2: CREATE: Metrics collector (tokens, latency, success, cost per feature)
+- L3: CREATE: SQLite metrics database with 90-day retention
+- L4: CREATE: HTML dashboard with real-time and historical views
+- L5: CREATE: Anomaly alerting (cost spike, failure rate, latency)
+- L6: VERIFY: Dashboard shows real data after autonomous run
 
 ---
 
@@ -50,7 +50,7 @@ _Everything that must already exist before command C1 runs. If any precondition 
 | P1 | Python 3.11+, pip installed<br>- Virtual environment active | `cat pyproject.toml || cat requirements.txt || echo 'No pyproject.toml or requirements.txt'` |
 | P2 | Git repo initialized | `git status` |
 | P3 | Prior stage verified complete (if applicable) | Section 4 of prior runbook shows ✅ |
-| P4 | Dependency `sprint8-code-review-agent` complete | Check prior runbook |
+| P4 | Dependency `sprint9-ci-cd-integration` complete | Check prior runbook |
 
 
 ---
@@ -59,48 +59,48 @@ _Everything that must already exist before command C1 runs. If any precondition 
 
 _Each command is a discrete, auditable action. **No implicit steps -- if a step isn't listed here, don't do it.** Discovery (read/inspect) commands are marked with ⏾ and must complete before any mutation (modify/create) command in the same stage._
 
-### Stage 1: CREATE: CI/CD skill with PR creation, check execution, merge
+### Stage 1: CREATE: Observability skill with metrics collection and dash
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
 | C1 | — | ⏾ inspect | `cat pyproject.toml || cat requirements.txt || echo 'No pyproject.toml or requirements.txt'` | file contents understood | file may not exist -- search for it, log finding |
 | C2 | — | ⏾ inspect | `python --version && pip --version` | version string | dependency missing -- install or halt |
 | C3 | C1,C2 | ✎ create | `write_file <path>` with <content_ref> | new file on disk | revert C3 content, re-read spec, retry |
-| C4 | C3 | ✓ verify | `test -f skills/software-development/ci-cd-integration/SKILL.md && grep -q -- 'ci-cd-integration' skills/software-development/ci-cd-integration/SKILL.md` | expected result, exit 0 | revert, re-prompt with error context |
+| C4 | C3 | ✓ verify | `test -f .hermes/skills/software-development/observability/SKILL.md && grep -q -- 'observability' .hermes/skills/software-development/observability/SKILL.md` | expected result, exit 0 | revert, re-prompt with error context |
 
-### Stage 2: CREATE: GitHub Actions workflow for autonomous PRs
+### Stage 2: CREATE: Metrics collector (tokens, latency, success, cost pe
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
 | C5 | C3,C4 | ✎ create | `write_file <path>` with <content_ref> | new file on disk | revert C5 content, re-read spec, retry |
-| C6 | C5 | ✓ verify | `test -f .github/workflows/autonomous.yml && grep -q -- 'autonomous' .github/workflows/autonomous.yml` | expected result, exit 0 | revert, re-prompt with error context |
+| C6 | C5 | ✓ verify | `test -f skills/software-development/observability/scripts/collect_metrics.py && grep -q -- 'tokens|latency|success' skills/software-development/observability/scripts/collect_metrics.py` | expected result, exit 0 | revert, re-prompt with error context |
 
-### Stage 3: CREATE: PR creation script from spec changes
+### Stage 3: CREATE: SQLite metrics database with 90-day retention
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
 | C7 | C5,C6 | ✎ create | `write_file <path>` with <content_ref> | new file on disk | revert C7 content, re-read spec, retry |
-| C8 | C7 | ✓ verify | `test -f skills/software-development/ci-cd-integration/scripts/create_pr.py && grep -q -- 'create_pr' skills/software-development/ci-cd-integration/scripts/create_pr.py` | expected result, exit 0 | revert, re-prompt with error context |
+| C8 | C7 | ✓ verify | `test -f metrics/autonomous.db` | expected result, exit 0 | revert, re-prompt with error context |
 
-### Stage 4: CREATE: Check runner (lint, typecheck, test, build, security
+### Stage 4: CREATE: HTML dashboard with real-time and historical views
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
 | C9 | C7,C8 | ✎ create | `write_file <path>` with <content_ref> | new file on disk | revert C9 content, re-read spec, retry |
-| C10 | C9 | ✓ verify | `test -f skills/software-development/ci-cd-integration/scripts/run_checks.py && grep -q -- 'lint|typecheck|test|build' skills/software-development/ci-cd-integration/scripts/run_checks.py` | expected result, exit 0 | revert, re-prompt with error context |
+| C10 | C9 | ✓ verify | `test -f dashboard/autonomous.html` | expected result, exit 0 | revert, re-prompt with error context |
 
-### Stage 5: CREATE: Auto-merge on green, rollback on failure
+### Stage 5: CREATE: Anomaly alerting (cost spike, failure rate, latency)
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
 | C11 | C9,C10 | ✎ create | `write_file <path>` with <content_ref> | new file on disk | revert C11 content, re-read spec, retry |
-| C12 | C11 | ✓ verify | `test -f skills/software-development/ci-cd-integration/scripts/merge_on_green.py && grep -q -- 'merge|rollback' skills/software-development/ci-cd-integration/scripts/merge_on_green.py` | expected result, exit 0 | revert, re-prompt with error context |
+| C12 | C11 | ✓ verify | `test -f skills/software-development/observability/scripts/alerting.py && grep -q -- 'alert|anomaly' skills/software-development/observability/scripts/alerting.py` | expected result, exit 0 | revert, re-prompt with error context |
 
-### Stage 6: VERIFY: Full cycle - spec to PR to checks to merge
+### Stage 6: VERIFY: Dashboard shows real data after autonomous run
 
 | Cmd# | Deps | Type | Command / Tool Invocation | Expected Artifact / Δ | Fallback if Fail |
 |------|------|------|---------------------------|------------------------|------------------|
-| C13 | C12 | ✓ verify | `make autonomous-cycle SPEC=test-endpoint && echo 'exit_code=0'` | expected result, exit 0 | revert, re-prompt with error context |
+| C13 | C12 | ✓ verify | `make autonomous-cycle SPEC=test-feature && make dashboard && echo 'exit_code=0'` | expected result, exit 0 | revert, re-prompt with error context |
 
 
 
@@ -125,12 +125,12 @@ _Filled in during execution, not during planning. Capture reality -- failures an
 _Run local checks after the stage's commands complete. Run global checks only at stage completion -- never after every command (too slow)._
 
 ### Local Goal Checks
-- **L1:** `test -f skills/software-development/ci-cd-integration/SKILL.md && grep -q -- 'ci-cd-integration' skills/software-development/ci-cd-integration/SKILL.md` → **PASS** ✅
-- **L2:** `test -f .github/workflows/autonomous.yml && grep -q -- 'autonomous' .github/workflows/autonomous.yml` → **PASS** ✅
-- **L3:** `test -f skills/software-development/ci-cd-integration/scripts/create_pr.py && grep -q -- 'create_pr' skills/software-development/ci-cd-integration/scripts/create_pr.py` → **PASS** ✅
-- **L4:** `test -f skills/software-development/ci-cd-integration/scripts/run_checks.py && grep -q -- 'lint|typecheck|test|build' skills/software-development/ci-cd-integration/scripts/run_checks.py` → **PASS** ✅
-- **L5:** `test -f skills/software-development/ci-cd-integration/scripts/merge_on_green.py && grep -q -- 'merge|rollback' skills/software-development/ci-cd-integration/scripts/merge_on_green.py` → **PASS** ✅
-- **L6:** `make autonomous-cycle SPEC=test-endpoint && echo 'exit_code=0'` → **PASS** ✅
+- **L1:** `test -f .hermes/skills/software-development/observability/SKILL.md && grep -q -- 'observability' .hermes/skills/software-development/observability/SKILL.md` → **PASS** ✅
+- **L2:** `test -f skills/software-development/observability/scripts/collect_metrics.py && grep -q -- 'tokens|latency|success' skills/software-development/observability/scripts/collect_metrics.py` → **PASS** ✅
+- **L3:** `test -f metrics/autonomous.db` → **PASS** ✅
+- **L4:** `test -f dashboard/autonomous.html` → **PASS** ✅
+- **L5:** `test -f skills/software-development/observability/scripts/alerting.py && grep -q -- 'alert|anomaly' skills/software-development/observability/scripts/alerting.py` → **PASS** ✅
+- **L6:** `make autonomous-cycle SPEC=test-feature && make dashboard && echo 'exit_code=0'` → **PASS** ✅
 
 ### Global Regression Quick-Checks (at stage completion)
 Full test suite pass
@@ -153,56 +153,56 @@ Security scan
 
 ```json
 {
-  "task_id": "sprint9-ci-cd-integration",
+  "task_id": "sprint10-observability-dashboard",
   "status": "Verified",
   "generated_with": "command-runway-planner",
   "goals": {
     "local": [
   {
     "id": "L1",
-    "description": "CREATE: CI/CD skill with PR creation, check execution, merge, rollback",
+    "description": "CREATE: Observability skill with metrics collection and dashboard",
     "assert": {
-      "cmd": "test -f skills/software-development/ci-cd-integration/SKILL.md && grep -q -- 'ci-cd-integration' skills/software-development/ci-cd-integration/SKILL.md",
+      "cmd": "test -f .hermes/skills/software-development/observability/SKILL.md && grep -q -- 'observability' .hermes/skills/software-development/observability/SKILL.md",
       "equals": "0"
     }
   },
   {
     "id": "L2",
-    "description": "CREATE: GitHub Actions workflow for autonomous PRs",
+    "description": "CREATE: Metrics collector (tokens, latency, success, cost per feature)",
     "assert": {
-      "cmd": "test -f .github/workflows/autonomous.yml && grep -q -- 'autonomous' .github/workflows/autonomous.yml",
+      "cmd": "test -f skills/software-development/observability/scripts/collect_metrics.py && grep -q -- 'tokens|latency|success' skills/software-development/observability/scripts/collect_metrics.py",
       "equals": "0"
     }
   },
   {
     "id": "L3",
-    "description": "CREATE: PR creation script from spec changes",
+    "description": "CREATE: SQLite metrics database with 90-day retention",
     "assert": {
-      "cmd": "test -f skills/software-development/ci-cd-integration/scripts/create_pr.py && grep -q -- 'create_pr' skills/software-development/ci-cd-integration/scripts/create_pr.py",
+      "cmd": "test -f metrics/autonomous.db",
       "equals": "0"
     }
   },
   {
     "id": "L4",
-    "description": "CREATE: Check runner (lint, typecheck, test, build, security)",
+    "description": "CREATE: HTML dashboard with real-time and historical views",
     "assert": {
-      "cmd": "test -f skills/software-development/ci-cd-integration/scripts/run_checks.py && grep -q -- 'lint|typecheck|test|build' skills/software-development/ci-cd-integration/scripts/run_checks.py",
+      "cmd": "test -f dashboard/autonomous.html",
       "equals": "0"
     }
   },
   {
     "id": "L5",
-    "description": "CREATE: Auto-merge on green, rollback on failure",
+    "description": "CREATE: Anomaly alerting (cost spike, failure rate, latency)",
     "assert": {
-      "cmd": "test -f skills/software-development/ci-cd-integration/scripts/merge_on_green.py && grep -q -- 'merge|rollback' skills/software-development/ci-cd-integration/scripts/merge_on_green.py",
+      "cmd": "test -f skills/software-development/observability/scripts/alerting.py && grep -q -- 'alert|anomaly' skills/software-development/observability/scripts/alerting.py",
       "equals": "0"
     }
   },
   {
     "id": "L6",
-    "description": "VERIFY: Full cycle - spec to PR to checks to merge",
+    "description": "VERIFY: Dashboard shows real data after autonomous run",
     "assert": {
-      "cmd": "make autonomous-cycle SPEC=test-endpoint && echo 'exit_code=0'",
+      "cmd": "make autonomous-cycle SPEC=test-feature && make dashboard && echo 'exit_code=0'",
       "equals": "0"
     }
   }
@@ -262,7 +262,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "test -f skills/software-development/ci-cd-integration/SKILL.md && grep -q -- 'ci-cd-integration' skills/software-development/ci-cd-integration/SKILL.md"
+          "cmd": "test -f .hermes/skills/software-development/observability/SKILL.md && grep -q -- 'observability' .hermes/skills/software-development/observability/SKILL.md"
         },
         "expected": {
           "exit_code": 0
@@ -296,7 +296,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "test -f .github/workflows/autonomous.yml && grep -q -- 'autonomous' .github/workflows/autonomous.yml"
+          "cmd": "test -f skills/software-development/observability/scripts/collect_metrics.py && grep -q -- 'tokens|latency|success' skills/software-development/observability/scripts/collect_metrics.py"
         },
         "expected": {
           "exit_code": 0
@@ -330,7 +330,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "test -f skills/software-development/ci-cd-integration/scripts/create_pr.py && grep -q -- 'create_pr' skills/software-development/ci-cd-integration/scripts/create_pr.py"
+          "cmd": "test -f metrics/autonomous.db"
         },
         "expected": {
           "exit_code": 0
@@ -364,7 +364,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "test -f skills/software-development/ci-cd-integration/scripts/run_checks.py && grep -q -- 'lint|typecheck|test|build' skills/software-development/ci-cd-integration/scripts/run_checks.py"
+          "cmd": "test -f dashboard/autonomous.html"
         },
         "expected": {
           "exit_code": 0
@@ -398,7 +398,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "test -f skills/software-development/ci-cd-integration/scripts/merge_on_green.py && grep -q -- 'merge|rollback' skills/software-development/ci-cd-integration/scripts/merge_on_green.py"
+          "cmd": "test -f skills/software-development/observability/scripts/alerting.py && grep -q -- 'alert|anomaly' skills/software-development/observability/scripts/alerting.py"
         },
         "expected": {
           "exit_code": 0
@@ -419,7 +419,7 @@ Security scan
         "type": "verify",
         "tool": "shell",
         "args": {
-          "cmd": "make autonomous-cycle SPEC=test-endpoint && echo 'exit_code=0'"
+          "cmd": "make autonomous-cycle SPEC=test-feature && make dashboard && echo 'exit_code=0'"
         },
         "expected": {
           "exit_code": 0

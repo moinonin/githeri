@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Agent Observability Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #e2e8f0; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #f8fafc; margin-bottom: 8px; }
+        .subtitle { color: #94a3b8; margin-bottom: 24px; }
+        
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: #1e293b; border-radius: 8px; padding: 20px; border: 1px solid #334155; }
+        .card h3 { color: #94a3b8; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+        .metric { font-size: 32px; font-weight: 700; }
+        .metric-success { color: #10b981; }
+        .metric-warning { color: #f59e0b; }
+        .metric-danger { color: #ef4444; }
+        .metric-neutral { color: #64748b; }
+        
+        .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .chart-card { background: #1e293b; border-radius: 8px; padding: 16px; border: 1px solid #334155; }
+        .chart-card h4 { color: #94a3b8; margin-bottom: 12px; }
+        canvas { max-height: 300px; }
+        
+        .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 900px) { .charts, .tables { grid-template-columns: 1fr; } }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #334155; }
+        th { color: #94a3b8; font-weight: 600; }
+        tr:hover { background: #1e293b; }
+        .status-success { color: #10b981; }
+        .status-failed { color: #ef4444; }
+        .severity-critical { color: #ef4444; font-weight: bold; }
+        .severity-warning { color: #f59e0b; }
+        .severity-info { color: #3b82f6; }
+        
+        .alert { padding: 12px; margin: 8px 0; border-radius: 6px; border-left: 4px solid; }
+        .alert-critical { background: rgba(239, 68, 68, 0.1); border-color: #ef4444; }
+        .alert-warning { background: rgba(245, 158, 11, 0.1); border-color: #f59e0b; }
+        .alert-info { background: rgba(59, 130, 246, 0.1); border-color: #3b82f6; }
+        
+        .footer { margin-top: 24px; padding-top: 16px; border-top: 1px solid #334155; color: #64748b; font-size: 12px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🤖 Autonomous Agent Observability</h1>
+            <p class="subtitle">Real-time metrics for AI-driven development</p>
+        </header>
+        
+        <div class="grid">
+            <div class="card">
+                <h3>Total Runs</h3>
+                <div class="metric metric-neutral">{stats['total_runs']}</div>
+            </div>
+            <div class="card">
+                <h3>Success Rate</h3>
+                <div class="metric" style="color: {rate_color};">{stats['success_rate']:.1f}%</div>
+            </div>
+            <div class="card">
+                <h3>Total Tokens</h3>
+                <div class="metric metric-neutral">{stats['total_tokens']:,}</div>
+            </div>
+            <div class="card">
+                <h3>Total Cost</h3>
+                <div class="metric metric-neutral">${stats['total_cost']:.4f}</div>
+            </div>
+            <div class="card">
+                <h3>Avg Duration</h3>
+                <div class="metric metric-neutral">{stats['avg_duration_ms']:.0f}ms</div>
+            </div>
+            <div class="card">
+                <h3>Active Alerts</h3>
+                <div class="metric {'metric-danger' if any(a[1] == 'critical' for a in stats['alerts']) else ('metric-warning' if stats['alerts'] else 'metric-neutral')}">
+                    {len(stats['alerts'])}
+                </div>
+            </div>
+        </div>
+        
+        <div class="charts">
+            <div class="chart-card">
+                <h4>📊 Runs & Success Rate (30 days)</h4>
+                <canvas id="runsChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>💰 Cost & Tokens (30 days)</h4>
+                <canvas id="costChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="charts">
+            <div class="chart-card">
+                <h4>⏱️ Average Duration (30 days)</h4>
+                <canvas id="durationChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h4>📈 Sprint Performance</h4>
+                <canvas id="sprintChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="tables">
+            <div class="card">
+                <h3>🚨 Active Alerts (7 days)</h3>
+                <div style="max-height: 300px; overflow-y: auto;">
+<p style="color: #64748b;">No active alerts ✅</p>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h3>📋 Recent Runs (7 days)</h3>
+                <table>
+                    <thead>
+                        <tr><th>Time</th><th>Status</th><th>Cost</th><th>Duration</th><th>Tokens</th></tr>
+                    </thead>
+                    <tbody>
+
+                        <tr>
+                            <td>2026-07-27T08:27</td>
+                            <td class="status-failed">failed</td>
+                            <td>$0.0000</td>
+                            <td>120000ms</td>
+                            <td>5,000</td>
+                        </tr>
+
+                        <tr>
+                            <td>2026-07-27T08:27</td>
+                            <td class="status-failed">failed</td>
+                            <td>$0.0000</td>
+                            <td>0ms</td>
+                            <td>0</td>
+                        </tr>
+
+                        <tr>
+                            <td>2026-07-27T08:24</td>
+                            <td class="status-failed">failed</td>
+                            <td>$0.0000</td>
+                            <td>0ms</td>
+                            <td>0</td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="card">
+                <h3>🏃 Sprint Performance (30 days)</h3>
+                <table>
+                    <thead>
+                        <tr><th>Sprint</th><th>Runs</th><th>Success %</th><th>Avg Cost</th><th>Avg Duration</th><th>Total Tokens</th></tr>
+                    </thead>
+                    <tbody>
+
+                        <tr>
+                            <td>sprint10</td>
+                            <td>1</td>
+                            <td>0.0%</td>
+                            <td>$0.0000</td>
+                            <td>120000ms</td>
+                            <td>5,000</td>
+                        </tr>
+
+                        <tr>
+                            <td>sprint9</td>
+                            <td>2</td>
+                            <td>0.0%</td>
+                            <td>$0.0000</td>
+                            <td>0ms</td>
+                            <td>0</td>
+                        </tr>
+
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Last updated: 2026-07-27 08:27:52 | 
+            Autonomous Agent Observability Dashboard
+        </div>
+    </div>
+    
+    <script>
+        // Chart colors
+        const colors = {
+            success: '#10b981',
+            warning: '#f59e0b',
+            danger: '#ef4444',
+            primary: '#3b82f6',
+            grid: '#334155',
+            text: '#94a3b8'
+        };
+        
+        Chart.defaults.color = colors.text;
+        Chart.defaults.borderColor = colors.grid;
+        
+        // Runs & Success Rate Chart
+        new Chart(document.getElementById('runsChart'), {
+            type: 'bar',
+            data: {
+                labels: ["2026-07-27"],
+                datasets: [{
+                    label: 'Total Runs',
+                    data: [3],
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: colors.primary,
+                    borderWidth: 1,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Success Rate %',
+                    data: [0.0],
+                    type: 'line',
+                    borderColor: colors.success,
+                    backgroundColor: 'transparent',
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    pointRadius: 3
+                }]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Runs' } },
+                    y1: { type: 'linear', display: true, position: 'right', min: 0, max: 100, title: { display: true, text: 'Success %' } }
+                }
+            }
+        });
+        
+        // Cost & Tokens Chart
+        new Chart(document.getElementById('costChart'), {
+            type: 'line',
+            data: {
+                labels: ["2026-07-27"],
+                datasets: [{
+                    label: 'Cost ($)',
+                    data: [0.0],
+                    borderColor: colors.warning,
+                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+                    yAxisID: 'y',
+                    tension: 0.3,
+                    fill: true
+                }, {
+                    label: 'Tokens',
+                    data: [5000],
+                    borderColor: colors.primary,
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    yAxisID: 'y1',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Cost ($)' } },
+                    y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Tokens' } }
+                }
+            }
+        });
+        
+        // Duration Chart
+        new Chart(document.getElementById('durationChart'), {
+            type: 'line',
+            data: {
+                labels: ["2026-07-27"],
+                datasets: [{
+                    label: 'Avg Duration (ms)',
+                    data: [40000.0],
+                    borderColor: colors.danger,
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: { y: { beginAtZero: true, title: { display: true, text: 'ms' } } }
+            }
+        });
+        
+        // Sprint Performance Chart
+        new Chart(document.getElementById('sprintChart'), {
+            type: 'bar',
+            data: {
+                labels: ["sprint10", "sprint9"],
+                datasets: [{
+                    label: 'Runs',
+                    data: [1, 2],
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: colors.primary,
+                    borderWidth: 1
+                }, {
+                    label: 'Success Rate %',
+                    data: [0.0, 0.0],
+                    type: 'line',
+                    borderColor: colors.success,
+                    backgroundColor: 'transparent',
+                    yAxisID: 'y1',
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: { beginAtZero: true, title: { display: true, text: 'Runs' } },
+                    y1: { min: 0, max: 100, position: 'right', title: { display: true, text: 'Success %' } }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

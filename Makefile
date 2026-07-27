@@ -134,12 +134,34 @@ upload-hf:
 	@echo "☁️  Uploading model to HuggingFace Hub: $(HF_REPO)"
 	@$(PYTHON) scripts/upload_to_hf.py --model-dir models/qwen2.5-coder-7b-specforge --repo $(HF_REPO) $(if $(PRIVATE),--private)
 
-# Skill installation
-install-skill:
-	@echo "📦 Installing spec-forge skill to ~/.hermes/skills/..."
-	@mkdir -p ~/.hermes/skills
-	@rsync -a --delete skills/spec-forge/ ~/.hermes/skills/spec-forge/
-	@echo "✅ Skill installed. Run 'skill_view(name=\"spec-forge\")' to verify."
+# Observability
+dashboard:
+	@echo "📊 Generating observability dashboard..."
+	@$(PYTHON) skills/software-development/observability/scripts/generate_dashboard.py \
+		--db metrics/autonomous.db --output dashboard/autonomous.html
+
+metrics-collect:
+	@echo "📊 Collecting metrics from autonomous run..."
+	@if [ -z "$(SPRINT)" ]; then echo "Usage: make metrics-collect SPRINT=sprint8"; exit 1; fi
+	@$(PYTHON) skills/software-development/observability/scripts/collect_metrics.py \
+		--sprint-id $(SPRINT) --runbook docs/sprints/$(SPRINT)/RUNBOOK.md --spec sprints/$(SPRINT).spec.yaml
+
+alerts:
+	@echo "🚨 Checking for anomalies..."
+	@$(PYTHON) skills/software-development/observability/scripts/alerting.py \
+		--db metrics/autonomous.db --email $(EMAIL)
+
+# Sprint Orchestrator
+orchestrate:
+	@echo "🎯 Running sprint orchestrator..."
+	@$(PYTHON) .hermes/skills/software-development/sprint-orchestrator/scripts/orchestrator.py \
+		--sprints-file $(SPRINTS) --workers $(WORKERS) $(if $(DRY_RUN),--dry-run) $(if $(VERBOSE),--verbose)
+
+# Autonomous cycle: spec → plan → runbook → execute → report
+autonomous-cycle:
+	@echo "🤖 Running autonomous cycle for spec $(SPEC)..."
+	@make spec PROMPT_FILE=$(SPEC)
+	@make -f Makefile.sprints sprint-all SPRINT=$(basename $(SPEC) .spec.yaml)
 
 uninstall-skill:
 	@echo "🗑️  Uninstalling spec-forge skill..."
@@ -175,3 +197,11 @@ help:
 	@echo "  make uninstall-skill                Remove spec-forge skill"
 	@echo "  make test                           Run the validator + plan test suite"
 	@echo "  make clean                          Delete output file"
+	@echo "  make orchestrate SPRINTS=file.md    Run sprint orchestrator (parallel execution)"
+	@echo "  make orchestrate SPRINTS=file.md --dry-run  Show execution plan only"
+	@echo "  make orchestrate SPRINTS=file.md --workers 2  Run with 2 workers"
+	@echo "  make dashboard                      Generate observability dashboard"
+	@echo "  make metrics-collect SPRINT=sprint8  Collect metrics from sprint"
+	@echo "  make alerts                         Check for anomalies"
+	@echo "  make guardrails-pipeline FEATURE=x   Run production guardrails pipeline"
+	@echo "  make autonomous-cycle SPEC=prompt.txt  Full NL → spec → plan → execute → report"

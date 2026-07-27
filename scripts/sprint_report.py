@@ -58,21 +58,24 @@ def parse_runbook(runbook_path):
             in_log = False
 
     # Parse goal verification
-    in_goals = False
-    for line in content.split('\n'):
-        if '### Local Goal Checks' in line:
-            in_goals = True
-            continue
-        if in_goals and line.startswith('- **L'):
-            # Parse goal line: - **L1:** `command` FAIL ✅  OR  - **L1:** `command` → **PASS** ✅
-            # Try format 1: `command` FAIL/PASS (with optional emoji)
-            match = re.search(r'\*\*(L\d+)\*\*:\s+`([^`]+)`\s+(PASS|FAIL)\s*✅', line)
-            if not match:
-                # Try format 2: `command` → **PASS/FAIL** (with optional emoji)
-                match = re.search(r'\*\*(L\d+)\*\*:\s+`([^`]+)`\s*→\s*\*\*(PASS|FAIL)\*\*\s*✅', line)
-            if match:
-                goal_id, cmd, status = match.groups()
-                results["goals"][goal_id] = {"command": cmd, "status": status}
+        in_goals = False
+        for line in content.split('\n'):
+            if '### Local Goal Checks' in line:
+                in_goals = True
+                continue
+            if in_goals and line.startswith('- **L'):
+                # Parse goal line formats:
+                # Format 1: - **L1:** `command` FAIL ✅
+                # Format 2: - **L1:** `command` → **PASS** ✅
+                import re
+                # Format 1: `command` FAIL/PASS ✅
+                match = re.search(r'-\s+\*\*(L\d+):\*\*\s+\`([^\`]+)\`\s+(PASS|FAIL)\s*✅', line)
+                if not match:
+                    # Format 2: `command` → **PASS/FAIL** ✅
+                    match = re.search(r'-\s+\*\*(L\d+):\*\*\s+\`([^\`]+)\`\s*→\s*\*\*(PASS|FAIL)\*\*\s*✅', line)
+                if match:
+                    goal_id, cmd, status = match.groups()
+                    results["goals"][goal_id] = {"command": cmd, "status": status}
 
     return results
 

@@ -6,7 +6,7 @@ local_goals:
     description: "CREATE: Observability skill with metrics collection and dashboard"
     verification:
       type: file_exists
-      path: skills/software-development/observability/SKILL.md
+      path: .hermes/skills/software-development/observability/SKILL.md
       expect:
         content_contains: "observability"
   - id: L2

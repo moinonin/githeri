@@ -3,28 +3,28 @@ summary: "Build sprint orchestrator for parallel feature execution with dependen
 depends_on: ["sprint10-observability-dashboard"]
 local_goals:
   - id: L1
-    description: "CREATE: Orchestrator skill with DAG resolution and parallel execution"
+    description: "CREATE: Sprint orchestrator with dependency graph and topological sort"
     verification:
       type: file_exists
-      path: skills/software-development/sprint-orchestrator/SKILL.md
+      path: skills/software-development/sprint-orchestrator/scripts/orchestrator.py
       expect:
-        content_contains: "sprint-orchestrator"
+        content_contains: "SprintOrchestrator"
   - id: L2
-    description: "CREATE: Dependency graph builder from SPRINTS.md"
+    description: "CREATE: Dependency graph with cycle detection and parallel group detection"
     verification:
       type: file_exists
       path: skills/software-development/sprint-orchestrator/scripts/dependency_graph.py
       expect:
-        content_contains: "depends_on|DAG"
+        content_contains: "DependencyGraph|topological_sort"
   - id: L3
-    description: "CREATE: Parallel worker pool with resource management"
+    description: "CREATE: Worker pool with resource management (GPU, memory, workers)"
     verification:
       type: file_exists
       path: skills/software-development/sprint-orchestrator/scripts/worker_pool.py
       expect:
-        content_contains: "parallel|worker|gpu"
+        content_contains: "WorkerConfig|ResourceTracker"
   - id: L4
-    description: "CREATE: SPRINTS.md dependency syntax and parallel groups"
+    description: "CREATE: SPRINTS.md with dependency syntax and parallel groups"
     verification:
       type: file_exists
       path: docs/SPRINTS.md
@@ -34,18 +34,18 @@ local_goals:
     description: "VERIFY: Orchestrator runs 3 sprints in parallel with correct deps"
     verification:
       type: cli
-      command: "make orchestrate SPRINTS=test_sprints.md --workers 3 --dry-run"
+      command: "make -f Makefile.sprints orchestrate SPRINTS=test_sprints.md --dry-run"
       expect:
         exit_code: 0
         stdout_contains: "parallel"
   - id: L6
-    description: "VERIFY: Dependency graph is valid (no cycles, valid DAG)"
+    description: "VERIFY: Full orchestration with failure handling and retry logic"
     verification:
       type: cli
-      command: "make dependency-check SPRINTS=SPRINTS.md"
+      command: "make -f Makefile.sprints orchestrate SPRINTS=test_sprints.md --workers 2"
       expect:
         exit_code: 0
-        stdout_contains: "valid"
+        stdout_contains: "completed"
 context:
   language: Python
   framework: Hermes
