@@ -1,0 +1,37 @@
+context:
+  framework: None
+  language: Python
+  test_framework: pytest
+depends_on: []
+local_goals:
+- description: 'CREATE: Add CLI flags --provider (ollama|openrouter) and --cloud-model
+    for scoring in run_pipeline.py'
+  id: L1
+  verification:
+    expect:
+      content_contains: --cloud-model
+    path: packages/pipeline/src/run_pipeline.py
+    type: file_exists
+- description: 'VERIFY: Config in .env file for model providers'
+  id: L2
+  verification:
+    expect:
+      content_contains: OPENROUTER_API_KEY=
+    path: packages/pipeline/.env.example
+    type: file_exists
+- description: 'VERIFY: Tests pass with ollama provider'
+  id: L3
+  verification:
+    command: pnpm test --filter=@verified-attention/pipeline-model-provider-ollama
+    expect:
+      exit_code: 0
+    type: cli
+- description: 'VERIFY: Tests pass with openrouter provider'
+  id: L4
+  verification:
+    command: pnpm test --filter=@verified-attention/pipeline-model-provider-openrouter
+    expect:
+      exit_code: 0
+    type: cli
+summary: Add model provider switching to run_pipeline.py
+task_id: model-provider-switching

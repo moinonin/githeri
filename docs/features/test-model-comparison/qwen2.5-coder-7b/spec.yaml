@@ -1,0 +1,31 @@
+context:
+  framework: Express.js
+  language: TypeScript
+  test_framework: Jest
+depends_on: []
+local_goals:
+- description: 'CREATE: EvidenceController class with handleEvidence method'
+  id: L1
+  verification:
+    expect:
+      content_contains: handleEvidence
+    path: packages/api/src/controllers/EvidenceController.ts
+    type: file_exists
+- description: 'VERIFY: Schema validation works for evidence payload'
+  id: L2
+  verification:
+    command: pnpm test --filter=@verified-attention/api-evidence-schema
+    expect:
+      exit_code: 0
+    type: cli
+- description: 'VERIFY: Evidence is stored in SQLite database'
+  id: L3
+  verification:
+    body: '{"content_id": "123", "session_id": "456", "payload": {"key": "value"}}'
+    expect:
+      status: 201
+    method: POST
+    type: http
+    url: http://localhost:3000/api/evidence
+summary: Add POST /api/evidence endpoint
+task_id: evidence-endpoint

@@ -1,0 +1,30 @@
+context:
+  database: SQLite
+  framework: Node.js
+  language: TypeScript
+  test_framework: Jest
+depends_on: []
+local_goals:
+- description: 'CREATE: Endpoint handler for POST /api/evidence'
+  id: L1
+  verification:
+    expect:
+      content_contains: POST /api/evidence
+    path: src/routes/api/evidence.ts
+    type: file_exists
+- description: 'VERIFY: Schema validation for evidence payload'
+  id: L2
+  verification:
+    expect:
+      content_contains: payload
+    path: src/schemas/evidence.schema.ts
+    type: file_exists
+- description: 'VERIFY: Evidence is stored in SQLite'
+  id: L3
+  verification:
+    command: pnpm test --filter=@verified-attention/evidence-storage
+    expect:
+      exit_code: 0
+    type: cli
+summary: Add POST /api/evidence endpoint
+task_id: add-evidence-endpoint

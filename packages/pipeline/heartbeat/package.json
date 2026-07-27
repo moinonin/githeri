@@ -1,0 +1,14 @@
+{
+  "name": "@verified-attention/pipeline-heartbeat",
+  "type": "module",
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0",
+    "vitest": "^1.6.1",
+    "tsdown": "^0.22.0",
+    "zod": "^3.22.0"
+  }
+}

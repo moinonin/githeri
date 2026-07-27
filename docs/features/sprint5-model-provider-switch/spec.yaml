@@ -1,0 +1,38 @@
+context:
+  framework: None
+  language: Python
+  test_framework: None
+depends_on: []
+local_goals:
+- description: 'CREATE: Add CLI flags --provider (ollama|openrouter) and --cloud-model
+    for scoring in run_pipeline.py'
+  id: L1
+  verification:
+    expect:
+      content_contains: --cloud-model
+    path: src/run_pipeline.py
+    type: file_exists
+- description: 'VERIFY: CLI flags are recognized and processed correctly'
+  id: L2
+  verification:
+    command: python src/run_pipeline.py --provider ollama --cloud-model model1
+    expect:
+      exit_code: 0
+    type: cli
+- description: 'CREATE: Add configuration for Ollama and OpenRouter in .env file'
+  id: L3
+  verification:
+    expect:
+      content_contains: OPENROUTER_API_KEY=
+    path: .env
+    type: file_exists
+- description: 'VERIFY: Environment variables are loaded correctly'
+  id: L4
+  verification:
+    command: python -c "import os; print(os.getenv('OLLAMA_API_KEY'))"
+    expect:
+      exit_code: 0
+      stdout_contains: OLLAMA_API_KEY=
+    type: cli
+summary: Add model provider switching to run_pipeline.py
+task_id: model-provider-switching

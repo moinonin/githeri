@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: model_provider_switching
+Version: 0.1.0
+Summary: Add model provider switching to run_pipeline.py
+Requires-Python: >=3.11

@@ -1,0 +1,50 @@
+context:
+  framework: githeri
+  language: Python
+  test_framework: pytest
+depends_on: []
+local_goals:
+- description: 'INSPECT: check existing run_pipeline.py structure'
+  id: L1
+  verification:
+    command: cat scripts/run_pipeline.py
+    expect:
+      exit_code: 0
+    type: cli
+- description: 'CREATE: add CLI flags --provider (ollama|openrouter) and --cloud-model for scoring in run_pipeline.py'
+  id: L2
+  verification:
+    expect:
+      content_contains: "--provider"
+    path: scripts/run_pipeline.py
+    type: file_exists
+- description: 'CREATE: add model provider switching logic for Ollama in run_pipeline.py'
+  id: L3
+  verification:
+    expect:
+      content: "if args.provider == 'ollama'"
+    path: scripts/run_pipeline.py
+    type: file_exists
+- description: 'CREATE: add .env configuration for Ollama and OpenRouter'
+  id: L4
+  verification:
+    expect:
+      content_contains: OPENROUTER_API_KEY
+    path: .env
+    type: file_exists
+- description: 'VERIFY: run_pipeline.py recognizes --provider ollama flag'
+  id: L5
+  verification:
+    command: python scripts/run_pipeline.py --provider ollama --cloud-model model1
+    expect:
+      exit_code: 0
+    type: cli
+- description: 'VERIFY: run_pipeline.py recognizes --provider openrouter flag'
+  id: L6
+  verification:
+    command: python scripts/run_pipeline.py --provider openrouter --cloud-model model1
+    expect:
+      exit_code: 0
+    type: cli
+summary: Add model provider switching to run_pipeline.py
+task_id: model-provider-switching

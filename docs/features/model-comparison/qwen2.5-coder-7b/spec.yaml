@@ -1,0 +1,22 @@
+context:
+  framework: None
+  language: Python
+  test_framework: pytest
+depends_on: []
+local_goals:
+- description: 'CREATE: ModelProviderSwitcher class in run_pipeline.py'
+  id: L1
+  verification:
+    expect:
+      content_contains: ModelProviderSwitcher
+    path: packages/pipeline/src/run_pipeline.py
+    type: file_exists
+- description: 'VERIFY: Model provider switching tests pass'
+  id: L2
+  verification:
+    command: pnpm test --filter=@verified-attention/pipeline-model-provider-switching
+    expect:
+      exit_code: 0
+    type: cli
+summary: Add model provider switching functionality
+task_id: sprint-5-model-provider-switching

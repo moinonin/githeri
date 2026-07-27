@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+src/model_provider_switching/__init__.py
+src/model_provider_switching/main.py
+src/model_provider_switching.egg-info/PKG-INFO
+src/model_provider_switching.egg-info/SOURCES.txt
+src/model_provider_switching.egg-info/dependency_links.txt
+src/model_provider_switching.egg-info/top_level.txt
+tests/test_model_provider_switching.py
+tests/test_plan_from_spec.py
+tests/test_runbook_scorer.py
+tests/test_validator.py

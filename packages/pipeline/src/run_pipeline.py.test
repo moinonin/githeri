@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+import pytest
+from run_pipeline import run_pipeline
+
+def test_run_pipeline_ollama():
+    run_pipeline('ollama', 'model-123')
+
+def test_run_pipeline_openrouter():
+    run_pipeline('openrouter', 'model-456')

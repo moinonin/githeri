@@ -1,0 +1,25 @@
+context:
+  framework: Node.js
+  language: TypeScript
+  test_framework: Vitest
+depends_on: []
+local_goals:
+- description: 'CREATE: Heartbeat stage package with HeartbeatStage class'
+  id: L1
+  verification:
+    expect:
+      content_contains: HeartbeatStage
+    path: packages/pipeline/heartbeat/src/index.ts
+    type: file_exists
+- description: 'VERIFY: Heartbeat tests pass'
+  id: L2
+  verification:
+    command: pnpm test --filter=@verified-attention/pipeline-heartbeat
+    expect:
+      exit_code: 0
+    type: cli
+summary: Add model provider switching to run_pipeline.py - use Ollama (local) for
+  spec generation and cloud provider (OpenRouter) for runbook scoring. Add CLI flags
+  --provider (ollama|openrouter) and --cloud-model for scoring, with config in .env
+  file.
+task_id: heartbeat-package
