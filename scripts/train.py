@@ -10,11 +10,18 @@ Requires:
 Output: models/qwen2.5-coder-7b-specforge/ (adapter weights)
 """
 import os
+os.environ["UNSLOTH_USE_PYTORCH"] = "1"
+os.environ["UNSLOTH_FORCE_PYTORCH"] = "1"
+
 import json
+import sys
 import torch
 from pathlib import Path
 
-# Set up paths
+# Force PyTorch backend BEFORE importing unsloth
+os.environ["UNSLOTH_USE_PYTORCH"] = "1"
+os.environ["UNSLOTH_FORCE_PYTORCH"] = "1"
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA_FILE = PROJECT_ROOT / "data" / "training_data_chat.jsonl"
 OUTPUT_DIR = PROJECT_ROOT / "models" / "qwen2.5-coder-7b-specforge"
@@ -40,9 +47,20 @@ except ImportError as e:
 # Model config
 MODEL_NAME = "unsloth/Qwen2.5-Coder-7B-Instruct"
 MAX_SEQ_LENGTH = 2048  # Match training data context
-DTYPE = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-LOAD_IN_4BIT = True
 
+# Force PyTorch backend (not MLX) on all platforms
+os.environ["UNSLOTH_USE_PYTORCH"] = "1"
+
+# On MPS (Apple Silicon), bfloat16 not supported - use float16
+# On CUDA with bf16 support, use bfloat16; otherwise float16
+if torch.cuda.is_available() and torch.cuda.is_bf16_supported():
+    DTYPE = torch.bfloat16
+elif torch.backends.mps.is_available():
+    DTYPE = torch.float16  # MPS supports float16, not bfloat16
+else:
+    DTYPE = torch.float16
+
+LOAD_IN_4BIT = True
 # LoRA config
 LORA_R = 16
 LORA_ALPHA = 32
