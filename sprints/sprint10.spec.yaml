@@ -1,0 +1,51 @@
+task_id: sprint10-observability-dashboard
+summary: "Build cost/performance observability: token tracking, latency, success rates, anomaly alerting"
+depends_on: ["sprint9-ci-cd-integration"]
+local_goals:
+  - id: L1
+    description: "CREATE: Observability skill with metrics collection and dashboard"
+    verification:
+      type: file_exists
+      path: skills/software-development/observability/SKILL.md
+      expect:
+        content_contains: "observability"
+  - id: L2
+    description: "CREATE: Metrics collector (tokens, latency, success, cost per feature)"
+    verification:
+      type: file_exists
+      path: skills/software-development/observability/scripts/collect_metrics.py
+      expect:
+        content_contains: "tokens|latency|success"
+  - id: L3
+    description: "CREATE: SQLite metrics database with 90-day retention"
+    verification:
+      type: file_exists
+      path: metrics/autonomous.db
+      expect:
+        exists: true
+  - id: L4
+    description: "CREATE: HTML dashboard with real-time and historical views"
+    verification:
+      type: file_exists
+      path: dashboard/autonomous.html
+      expect:
+        exists: true
+  - id: L5
+    description: "CREATE: Anomaly alerting (cost spike, failure rate, latency)"
+    verification:
+      type: file_exists
+      path: skills/software-development/observability/scripts/alerting.py
+      expect:
+        content_contains: "alert|anomaly"
+  - id: L6
+    description: "VERIFY: Dashboard shows real data after autonomous run"
+    verification:
+      type: cli
+      command: "make autonomous-cycle SPEC=test-feature && make dashboard"
+      expect:
+        exit_code: 0
+        stdout_contains: "dashboard"
+context:
+  language: Python
+  framework: SQLite/HTML
+  test_framework: pytest

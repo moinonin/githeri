@@ -1,0 +1,29 @@
+task_id: sprint-template
+summary: "Template for sprint specifications"
+depends_on: []
+local_goals:
+  - id: L1
+    description: "PLACEHOLDER: First inspection/creation task"
+    verification:
+      type: file_exists
+      path: path/to/output
+      expect:
+        exists: true
+  - id: L2
+    description: "PLACEHOLDER: First creation task"
+    verification:
+      type: file_exists
+      path: path/to/output
+      expect:
+        content_contains: "expected content"
+  - id: L3
+    description: "PLACEHOLDER: Verification task"
+    verification:
+      type: cli
+      command: "python -m pytest tests/test_something.py"
+      expect:
+        exit_code: 0
+context:
+  language: Python
+  framework: <project-framework>
+  test_framework: pytest

@@ -1,0 +1,51 @@
+task_id: sprint9-ci-cd-integration
+summary: "Build CI/CD integration for autonomous agent: auto-PR, checks, merge-on-green, rollback"
+depends_on: ["sprint8-code-review-agent"]
+local_goals:
+  - id: L1
+    description: "CREATE: CI/CD skill with PR creation, check execution, merge, rollback"
+    verification:
+      type: file_exists
+      path: skills/software-development/ci-cd-integration/SKILL.md
+      expect:
+        content_contains: "ci-cd-integration"
+  - id: L2
+    description: "CREATE: GitHub Actions workflow for autonomous PRs"
+    verification:
+      type: file_exists
+      path: .github/workflows/autonomous.yml
+      expect:
+        content_contains: "autonomous"
+  - id: L3
+    description: "CREATE: PR creation script from spec changes"
+    verification:
+      type: file_exists
+      path: skills/software-development/ci-cd-integration/scripts/create_pr.py
+      expect:
+        content_contains: "create_pr"
+  - id: L4
+    description: "CREATE: Check runner (lint, typecheck, test, build, security)"
+    verification:
+      type: file_exists
+      path: skills/software-development/ci-cd-integration/scripts/run_checks.py
+      expect:
+        content_contains: "lint|typecheck|test|build"
+  - id: L5
+    description: "CREATE: Auto-merge on green, rollback on failure"
+    verification:
+      type: file_exists
+      path: skills/software-development/ci-cd-integration/scripts/merge_on_green.py
+      expect:
+        content_contains: "merge|rollback"
+  - id: L6
+    description: "VERIFY: Full cycle - spec to PR to checks to merge"
+    verification:
+      type: cli
+      command: "make autonomous-cycle SPEC=test-endpoint"
+      expect:
+        exit_code: 0
+        stdout_contains: "merged"
+context:
+  language: Python
+  framework: GitHub Actions
+  test_framework: pytest

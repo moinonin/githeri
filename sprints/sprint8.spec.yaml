@@ -1,0 +1,58 @@
+task_id: sprint8-code-review-agent
+summary: "Build LLM-powered code review agent with pattern enforcement, security scanning, and CI/CD integration"
+depends_on: []
+local_goals:
+  - id: L1
+    description: "CREATE: Code review skill with diff analysis and pattern enforcement"
+    verification:
+      type: file_exists
+      path: skills/software-development/code-review-agent/SKILL.md
+      expect:
+        content_contains: "code-review-agent"
+  - id: L2
+    description: "CREATE: Review diff script with structured output (findings: block/warn/info)"
+    verification:
+      type: file_exists
+      path: skills/software-development/code-review-agent/scripts/review_diff.py
+      expect:
+        content_contains: "block|warn|info"
+  - id: L3
+    description: "CREATE: Pattern library with naming, structure, imports, testing rules"
+    verification:
+      type: file_exists
+      path: .hermes/patterns/naming.yaml
+      expect:
+        exists: true
+  - id: L4
+    description: "CREATE: Security scanner for secrets, vulnerabilities, license issues"
+    verification:
+      type: file_exists
+      path: skills/software-development/code-review-agent/scripts/security_scan.py
+      expect:
+        content_contains: "secret|vulnerab"
+  - id: L5
+    description: "CREATE: Pattern enforcement script"
+    verification:
+      type: file_exists
+      path: skills/software-development/code-review-agent/scripts/enforce_patterns.py
+      expect:
+        content_contains: "pattern|naming|import"
+  - id: L6
+    description: "VERIFY: Review agent catches injected bugs in test diffs"
+    verification:
+      type: cli
+      command: "python skills/software-development/code-review-agent/scripts/review_diff.py --diff tests/fixtures/buggy.diff --format json"
+      expect:
+        exit_code: 0
+        stdout_contains: "block"
+  - id: L7
+    description: "VERIFY: Pattern enforcement passes on clean code, fails on violations"
+    verification:
+      type: cli
+      command: "python skills/software-development/code-review-agent/scripts/enforce_patterns.py --path . --strict"
+      expect:
+        exit_code: 0
+context:
+  language: Python
+  framework: Hermes
+  test_framework: pytest

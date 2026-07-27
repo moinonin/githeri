@@ -1,0 +1,51 @@
+task_id: sprint12-production-guardrails
+summary: "Build production guardrails: canary deploy, health checks, auto-rollback, secret scanning"
+depends_on: ["sprint11-sprint-orchestrator"]
+local_goals:
+  - id: L1
+    description: "CREATE: Guardrails skill with canary, health, rollback, secrets"
+    verification:
+      type: file_exists
+      path: skills/software-development/production-guardrails/SKILL.md
+      expect:
+        content_contains: "production-guardrails"
+  - id: L2
+    description: "CREATE: Canary deployment with traffic splitting and monitoring"
+    verification:
+      type: file_exists
+      path: skills/software-development/production-guardrails/scripts/canary_deploy.py
+      expect:
+        content_contains: "canary|traffic"
+  - id: L3
+    description: "CREATE: Health checks (liveness, readiness, startup) with auto-rollback"
+    verification:
+      type: file_exists
+      path: skills/software-development/production-guardrails/scripts/health_checks.py
+      expect:
+        content_contains: "liveness|readiness|rollback"
+  - id: L4
+    description: "CREATE: Secret scanner for code, configs, env files"
+    verification:
+      type: file_exists
+      path: skills/software-development/production-guardrails/scripts/secret_scanner.py
+      expect:
+        content_contains: "secret|truffleHog"
+  - id: L5
+    description: "CREATE: License and dependency audit gates"
+    verification:
+      type: file_exists
+      path: skills/software-development/production-guardrails/scripts/license_check.py
+      expect:
+        content_contains: "license|audit"
+  - id: L6
+    description: "VERIFY: Full guardrails pipeline - scan to canary to health to rollback"
+    verification:
+      type: cli
+      command: "make guardrails-pipeline FEATURE=test-feature"
+      expect:
+        exit_code: 0
+        stdout_contains: "guardrails complete"
+context:
+  language: Python
+  framework: Kubernetes/Docker
+  test_framework: pytest

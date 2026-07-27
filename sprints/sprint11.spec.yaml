@@ -1,0 +1,52 @@
+task_id: sprint11-sprint-orchestrator
+summary: "Build sprint orchestrator for parallel feature execution with dependency resolution"
+depends_on: ["sprint10-observability-dashboard"]
+local_goals:
+  - id: L1
+    description: "CREATE: Orchestrator skill with DAG resolution and parallel execution"
+    verification:
+      type: file_exists
+      path: skills/software-development/sprint-orchestrator/SKILL.md
+      expect:
+        content_contains: "sprint-orchestrator"
+  - id: L2
+    description: "CREATE: Dependency graph builder from SPRINTS.md"
+    verification:
+      type: file_exists
+      path: skills/software-development/sprint-orchestrator/scripts/dependency_graph.py
+      expect:
+        content_contains: "depends_on|DAG"
+  - id: L3
+    description: "CREATE: Parallel worker pool with resource management"
+    verification:
+      type: file_exists
+      path: skills/software-development/sprint-orchestrator/scripts/worker_pool.py
+      expect:
+        content_contains: "parallel|worker|gpu"
+  - id: L4
+    description: "CREATE: SPRINTS.md dependency syntax and parallel groups"
+    verification:
+      type: file_exists
+      path: docs/SPRINTS.md
+      expect:
+        content_contains: "depends_on|parallel_group"
+  - id: L5
+    description: "VERIFY: Orchestrator runs 3 sprints in parallel with correct deps"
+    verification:
+      type: cli
+      command: "make orchestrate SPRINTS=test_sprints.md --workers 3 --dry-run"
+      expect:
+        exit_code: 0
+        stdout_contains: "parallel"
+  - id: L6
+    description: "VERIFY: Dependency graph is valid (no cycles, valid DAG)"
+    verification:
+      type: cli
+      command: "make dependency-check SPRINTS=SPRINTS.md"
+      expect:
+        exit_code: 0
+        stdout_contains: "valid"
+context:
+  language: Python
+  framework: Hermes
+  test_framework: pytest

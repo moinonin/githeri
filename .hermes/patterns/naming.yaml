@@ -1,0 +1,92 @@
+# Pattern Library - Naming Conventions
+
+functions:
+  style: "snake_case"
+  regex: "^[a-z_][a-z0-9_]*$"
+  examples:
+    - "get_user_data"
+    - "process_payment"
+    - "_internal_helper"
+  anti_examples:
+    - "GetUserData"
+    - "getUserData"
+    - "get-user-data"
+
+classes:
+  style: "PascalCase"
+  regex: "^[A-Z][a-zA-Z0-9]*$"
+  examples:
+    - "UserManager"
+    - "PaymentProcessor"
+    - "AuthError"
+  anti_examples:
+    - "user_manager"
+    - "userManager"
+
+variables:
+  style: "snake_case"
+  regex: "^[a-z_][a-z0-9_]*$"
+  examples:
+    - "user_count"
+    - "max_retries"
+    - "_internal_flag"
+  anti_examples:
+    - "userCount"
+    - "USER_COUNT"
+
+constants:
+  style: "SCREAMING_SNAKE_CASE"
+  regex: "^[A-Z][A-Z0-9_]*$"
+  examples:
+    - "MAX_RETRIES"
+    - "DEFAULT_TIMEOUT"
+    - "API_BASE_URL"
+  anti_examples:
+    - "maxRetries"
+    - "max_retries"
+
+files:
+  python:
+    style: "snake_case"
+    regex: "^[a-z_][a-z0-9_]*\\.py$"
+    examples:
+      - "user_manager.py"
+      - "auth_utils.py"
+
+# Pattern: Import ordering
+imports:
+  order:
+    - "stdlib"
+    - "third_party"
+    - "local"
+  examples:
+    - "import os"
+    - "import sys"
+    - ""
+    - "import requests"
+    - "import yaml"
+    - ""
+    - "from mypackage import utils"
+  banned:
+    - "from module import *"
+
+# Pattern: Testing
+testing:
+  file_naming:
+    pattern: "test_*.py"
+    examples:
+      - "test_user_manager.py"
+      - "test_auth_utils.py"
+  function_naming:
+    pattern: "test_*"
+    examples:
+      - "test_get_user_data"
+      - "test_process_payment_success"
+  coverage:
+    minimum: 80
+
+# Pattern: Structure
+structure:
+  src_layout: true
+  package_init: true
+  max_depth: 4

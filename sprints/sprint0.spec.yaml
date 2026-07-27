@@ -1,0 +1,23 @@
+task_id: sprint0-bootstrap
+summary: "Bootstrap sprint execution infrastructure: spec templates, report generator, meta-Makefile"
+depends_on: []
+local_goals:
+  - id: L1
+    description: "CREATE: Sprint spec template with all required fields"
+    verification:
+      type: file_exists
+      path: sprints/TEMPLATE.spec.yaml
+  - id: L2
+    description: "CREATE: Meta-Makefile for sprint execution and reporting"
+    verification:
+      type: file_exists
+      path: Makefile.sprints
+  - id: L3
+    description: "CREATE: Sprint report generator"
+    verification:
+      type: file_exists
+      path: scripts/sprint_report.py
+context:
+  language: Python
+  framework: Make
+  test_framework: pytest

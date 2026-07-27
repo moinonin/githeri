@@ -1,0 +1,57 @@
+# Meta-Makefile for Sprint Execution
+# Usage: make -f Makefile.sprints SPRINT=sprint0
+
+SPRINT ?= sprint0
+SPEC_FILE = sprints/$(SPRINT).spec.yaml
+OUTPUT_DIR = docs/sprints/$(SPRINT)
+
+.PHONY: sprint-spec sprint-plan sprint-execute sprint-report sprint-all
+
+# Generate spec from prompt (if prompt file exists)
+sprint-spec:
+	@if [ -f sprints/$(SPRINT).prompt ]; then \
+		echo "🚀 Generating spec from prompt..."; \
+		make spec PROMPT_FILE=sprints/$(SPRINT).prompt; \
+	else \
+		echo "Using existing spec: $(SPEC_FILE)"; \
+	fi
+
+# Generate PLAN.md + RUNBOOK.md from spec
+sprint-plan: $(SPEC_FILE)
+	@echo "📐 Generating PLAN.md + RUNBOOK.md..."
+	python3 ~/.hermes/skills/software-development/command-runway-planner/scripts/assemble_plan.py $(SPEC_FILE) $(OUTPUT_DIR)
+
+# Execute RUNBOOK.md autonomously
+sprint-execute: $(OUTPUT_DIR)/RUNBOOK.md
+	@echo "⚡ Executing RUNBOOK.md..."
+	python3 ~/.hermes/skills/software-development/command-runway-autonomous/scripts/autonomous_execute.py \
+		--output-dir $(OUTPUT_DIR) \
+		--output execute-only \
+		--llm-provider ollama \
+		--llm-model qwen2.5-coder:7b-instruct \
+		--llm-base-url http://localhost:11434/v1
+
+# Generate sprint report
+sprint-report: $(OUTPUT_DIR)/RUNBOOK.md
+	@echo "📊 Generating sprint report..."
+	python3 scripts/sprint_report.py --runbook $(OUTPUT_DIR)/RUNBOOK.md --spec $(SPEC_FILE) --output $(OUTPUT_DIR)/REPORT.md
+
+# Full pipeline: spec → plan → execute → report
+sprint-all: sprint-spec sprint-plan sprint-execute sprint-report
+	@echo "✅ Sprint $(SPRINT) complete!"
+	@echo "   Spec: $(SPEC_FILE)"
+	@echo "   Plan: $(OUTPUT_DIR)/PLAN.md"
+	@echo "   Runbook: $(OUTPUT_DIR)/RUNBOOK.md (with execution log)"
+	@echo "   Report: $(OUTPUT_DIR)/REPORT.md"
+
+# Validate sprint spec
+sprint-validate: $(SPEC_FILE)
+	@python3 scripts/validator.py $(SPEC_FILE)
+
+# List available sprints
+sprint-list:
+	@ls sprints/*.spec.yaml | sed 's/sprints\///' | sed 's/.spec.yaml//'
+
+# Clean sprint output
+sprint-clean:
+	rm -rf $(OUTPUT_DIR)

@@ -1,0 +1,32 @@
+diff --git a/src/auth.py b/src/auth.py
+index 1234567..abcdefg 100644
+--- a/src/auth.py
++++ b/src/auth.py
+@@ -10,6 +10,10 @@ def authenticate_user(username, password):
+     return user
+ 
+ 
++API_KEY = "sk-1234567890abcdef1234"
++SECRET = "my-super-secret-password"
++
++
+ def login(request):
+     # TODO: add rate limiting
+     username = request.POST.get('username')
+@@ -25,7 +29,7 @@ def login(request):
+     if user:
+         return user
+     else:
+-        print("Login failed for user: " + username)
++        logger.warning("Login failed for user: %s", username)
+         return None
+ 
+ 
+@@ -35,4 +39,8 @@ def login(request):
+     cursor.execute("SELECT * FROM users WHERE name = '%s'" % username)
+     return cursor.fetchone()
+ 
++
++def bad_function(items=[]):
++    items.append("bad")
++    return items
