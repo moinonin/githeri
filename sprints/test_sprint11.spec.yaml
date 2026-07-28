@@ -1,0 +1,40 @@
+{
+  "task_id": "test-sprint",
+  "summary": "Test sprint for orchestrator",
+  "depends_on": [],
+  "local_goals": [
+    {
+      "id": "L1",
+      "description": "CREATE: Sprint orchestrator with dependency graph and topological sort",
+      "verification": {
+        "type": "file_exists",
+        "path": "skills/software-development/sprint-orchestrator/scripts/orchestrator.py",
+        "expect": {
+          "content_contains": "SprintOrchestrator"
+        }
+      }
+    },
+    {
+      "id": "L2",
+      "description": "CREATE: Dependency graph with cycle detection and parallel group detection",
+      "verification": {
+        "type": "file_exists",
+        "path": "skills/software-development/sprint-orchestrator/scripts/dependency_graph.py",
+        "expect": {
+          "content_contains": "DependencyGraph|topological_sort"
+        }
+      }
+    },
+    {
+      "id": "L3",
+      "description": "CREATE: Worker pool with resource management (GPU, memory, workers)",
+      "verification": {
+        "type": "file_exists",
+        "path": "skills/software-development/sprint-orchestrator/scripts/worker_pool.py",
+        "expect": {
+          "content_contains": "WorkerConfig|ResourceTracker"
+        }
+      }
+    }
+  ]
+}
