@@ -46,16 +46,19 @@ class SprintOrchestrator:
         # Execute each group sequentially (groups are parallel within themselves)
         for group_idx, group in enumerate(self.parallel_groups):
             print(f"Executing group {group_idx + 1}: {', '.join(group)}")
+            futures = []
             for task_name in group:
                 # In a real implementation, we'd map task_name to actual command
                 # For now, we'll just simulate
                 command = f"echo Executing task: {task_name}"
                 worker_id = self.pool.submit(command)
                 print(f"  Submitted task {task_name} to {worker_id}")
+            
+            # Wait for this group to complete before moving to next group
+            results = self.pool.wait_for_completion()
+            print(f"  Group {group_idx + 1} completed: {len(results)} tasks")
         
-        # Wait for all to complete
-        results = self.pool.wait_for_completion()
-        print(f"All groups executed. Completed: {len(results)}")
+        print(f"All groups executed. Completed: {len(self.pool.completed_results)}")
     
     def run(self):
         """Run the full orchestration."""

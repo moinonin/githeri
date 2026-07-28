@@ -1,40 +1,19 @@
-{
-  "task_id": "test-sprint",
-  "summary": "Test sprint for orchestrator",
-  "depends_on": [],
-  "local_goals": [
-    {
-      "id": "L1",
-      "description": "CREATE: Sprint orchestrator with dependency graph and topological sort",
-      "verification": {
-        "type": "file_exists",
-        "path": "skills/software-development/sprint-orchestrator/scripts/orchestrator.py",
-        "expect": {
-          "content_contains": "SprintOrchestrator"
-        }
-      }
-    },
-    {
-      "id": "L2",
-      "description": "CREATE: Dependency graph with cycle detection and parallel group detection",
-      "verification": {
-        "type": "file_exists",
-        "path": "skills/software-development/sprint-orchestrator/scripts/dependency_graph.py",
-        "expect": {
-          "content_contains": "DependencyGraph|topological_sort"
-        }
-      }
-    },
-    {
-      "id": "L3",
-      "description": "CREATE: Worker pool with resource management (GPU, memory, workers)",
-      "verification": {
-        "type": "file_exists",
-        "path": "skills/software-development/sprint-orchestrator/scripts/worker_pool.py",
-        "expect": {
-          "content_contains": "WorkerConfig|ResourceTracker"
-        }
-      }
-    }
-  ]
-}
+tasks:
+  - name: L1
+    description: "CREATE: Sprint orchestrator with dependency graph and topological sort"
+    depends_on: []
+  - name: L2
+    description: "CREATE: Dependency graph with cycle detection and parallel group detection"
+    depends_on: ["L1"]
+  - name: L3
+    description: "CREATE: Worker pool with resource management (GPU, memory, workers)"
+    depends_on: ["L1"]
+  - name: L4
+    description: "CREATE: SPRINTS.md with dependency syntax and parallel groups"
+    depends_on: ["L2", "L3"]
+  - name: L5
+    description: "VERIFY: Orchestrator runs 3 sprints in parallel with correct deps"
+    depends_on: ["L4"]
+  - name: L6
+    description: "VERIFY: Full orchestration with failure handling and retry logic"
+    depends_on: ["L4"]

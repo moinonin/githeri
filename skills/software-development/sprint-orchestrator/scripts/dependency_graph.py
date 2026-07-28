@@ -13,9 +13,10 @@ def build_graph(spec_path: str) -> dict:
     Parse sprint spec YAML and build a directed graph.
     Returns dict mapping node -> list of dependencies.
     """
+    import yaml
     try:
         with open(spec_path, 'r') as f:
-            spec = json.load(f)  # We'll use JSON for simplicity
+            spec = yaml.safe_load(f)
     except Exception as e:
         print(f"ERROR parsing spec: {e}", file=sys.stderr)
         return {}
@@ -35,6 +36,11 @@ def detect_cycles(graph: dict) -> list:
     visited = set()
     rec_stack = set()
     cycles = []
+    
+    # Get all nodes (including dependencies that aren't keys in the graph)
+    all_nodes = set(graph.keys())
+    for deps in graph.values():
+        all_nodes.update(deps)
 
     def dfs(node, path):
         if node in rec_stack:
@@ -47,11 +53,11 @@ def detect_cycles(graph: dict) -> list:
             return
         visited.add(node)
         rec_stack.add(node)
-        for neighbor in graph[node]:
+        for neighbor in graph.get(node, []):
             dfs(neighbor, path + [node])
         rec_stack.remove(node)
 
-    for node in graph:
+    for node in all_nodes:
         if node not in visited:
             dfs(node, [])
     return cycles
@@ -61,43 +67,40 @@ def get_parallel_groups(graph: dict) -> list:
     Compute parallel execution groups using topological sort.
     Returns list of groups (each group is a list of nodes).
     """
-    in_degree = {node: 0 for node in graph}
+    # Get all nodes (including dependencies that aren't keys in the graph)
+    all_nodes = set(graph.keys())
+    for deps in graph.values():
+        all_nodes.update(deps)
+    
+    in_degree = {node: 0 for node in all_nodes}
     for node in graph:
         for dep in graph[node]:
             in_degree[dep] += 1
 
-    queue = deque([node for node in graph if in_degree[node] == 0])
+    queue = deque([node for node in all_nodes if in_degree[node] == 0])
     topo_order = []
-
+    
+    # Also track the depth of each node
+    depth = {node: 0 for node in all_nodes}
+    
     while queue:
         node = queue.popleft()
         topo_order.append(node)
-        for neighbor in graph[node]:
+        for neighbor in graph.get(node, []):
             in_degree[neighbor] -= 1
+            depth[neighbor] = max(depth[neighbor], depth[node] + 1)
             if in_degree[neighbor] == 0:
                 queue.append(neighbor)
 
     # Group by depth in topological order
-    groups = []
-    current_group = []
-    prev_depth = -1
-
+    groups = {}
     for node in topo_order:
-        # Calculate depth by counting how many dependencies it has
-        depth = 0
-        for dep in graph[node]:
-            if dep in topo_order and topo_order.index(dep) < topo_order.index(node):
-                depth = max(depth, topo_order.index(dep) + 1)
-        if depth != prev_depth:
-            if current_group:
-                groups.append(current_group)
-            current_group = []
-            prev_depth = depth
-        current_group.append(node)
-
-    if current_group:
-        groups.append(current_group)
-    return groups
+        d = depth[node]
+        if d not in groups:
+            groups[d] = []
+        groups[d].append(node)
+    
+    return [groups[d] for d in sorted(groups.keys())]
 
 def main():
     if len(sys.argv) != 2:

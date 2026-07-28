@@ -87,6 +87,8 @@ def parse_args():
                         help="Execution backend (default: python)")
     parser.add_argument("--verbose", "-v", action="store_true", default=False,
                         help="Print detailed execution output")
+    parser.add_argument("--clean", action="store_true", default=False,
+                        help="Clean up generated feature code after execution (removes src/<task_id>/)")
 
     return parser.parse_args()
 
@@ -207,6 +209,9 @@ def main():
 
     if args.verbose:
         cmd.append("--yolo")  # Auto-approve (passed to Hermes if --executor hermes)
+
+    if args.clean:
+        cmd.append("--clean")
 
     # Execute the pipeline
     try:

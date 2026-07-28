@@ -21,6 +21,8 @@ class WorkerPool:
         self.active_workers = 0
         self.completed_workers = []
         self.completed_results = []
+        self.futures = []
+        self._lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
     
     def submit(self, command: str, workdir: str = "", env: Optional[dict] = None) -> str:
@@ -28,14 +30,18 @@ class WorkerPool:
         Submit a command to run autonomously.
         Returns the worker ID.
         """
-        if self.active_workers >= self.max_workers:
-            raise RuntimeError("Maximum workers reached")
+        with self._lock:
+            if self.active_workers >= self.max_workers:
+                raise RuntimeError("Maximum workers reached")
+            
+            worker_id = f"worker_{self.active_workers}"
+            self.active_workers += 1
         
-        self.active_workers += 1
-        future = self.executor.submit(self._run_worker, command, workdir, env)
-        return f"worker_{self.active_workers - 1}"
+        future = self.executor.submit(self._run_worker, command, workdir, env, worker_id)
+        self.futures.append(future)
+        return worker_id
     
-    def _run_worker(self, command: str, workdir: str, env: Optional[dict]):
+    def _run_worker(self, command: str, workdir: str, env: Optional[dict], worker_id: str):
         """
         Internal method to run a worker.
         """
@@ -48,46 +54,56 @@ class WorkerPool:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=self.timeout
+                timeout=self.timeout,
+                shell=True
             )
-            self.active_workers -= 1
-            self.completed_workers.append(f"worker_{self.active_workers}")
-            self.completed_results.append({
-                'stdout': result.stdout,
-                'stderr': result.stderr,
-                'returncode': result.returncode,
-                'timestamp': time.time()
-            })
+            with self._lock:
+                self.active_workers -= 1
+                self.completed_workers.append(worker_id)
+                self.completed_results.append({
+                    'worker_id': worker_id,
+                    'stdout': result.stdout,
+                    'stderr': result.stderr,
+                    'returncode': result.returncode,
+                    'timestamp': time.time()
+                })
         except subprocess.TimeoutExpired:
-            self.active_workers -= 1
-            self.completed_workers.append(f"worker_{self.active_workers}_timeout")
+            with self._lock:
+                self.active_workers -= 1
+                self.completed_workers.append(f"{worker_id}_timeout")
         except Exception as e:
-            self.active_workers -= 1
-            self.completed_workers.append(f"worker_{self.active_workers}_error")
-            self.completed_results.append({
-                'stdout': '',
-                'stderr': str(e),
-                'returncode': -1,
-                'timestamp': time.time()
-            })
+            with self._lock:
+                self.active_workers -= 1
+                self.completed_workers.append(f"{worker_id}_error")
+                self.completed_results.append({
+                    'worker_id': worker_id,
+                    'stdout': '',
+                    'stderr': str(e),
+                    'returncode': -1,
+                    'timestamp': time.time()
+                })
         return
 
     def wait_for_completion(self) -> list:
         """
         Wait for all workers to complete and return results.
         """
+        # Wait for all futures to complete
+        for future in as_completed(self.futures):
+            future.result()  # This will raise any exception that occurred
         return self.completed_results
 
     def get_stats(self) -> dict:
         """
         Get current statistics about workers.
         """
-        return {
-            'max_workers': self.max_workers,
-            'active_workers': self.active_workers,
-            'completed_workers': len(self.completed_workers),
-            'total_completed': len(self.completed_results)
-        }
+        with self._lock:
+            return {
+                'max_workers': self.max_workers,
+                'active_workers': self.active_workers,
+                'completed_workers': len(self.completed_workers),
+                'total_completed': len(self.completed_results)
+            }
 
 def main():
     pool = WorkerPool(max_workers=2, timeout=3600)
