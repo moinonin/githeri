@@ -1,0 +1,58 @@
+
+task_id: add-notifications-endpoint
+summary: "Implement a POST /notifications endpoint for sending emails and p[1D[K
+push notifications"
+depends_on: ["stage-1-core-models", "stage-3-email-service"]
+local_goals:
+  - id: L1
+    description: "INSPECT: check existing notification model and routes bef[3D[K
+before adding endpoints"
+    verification:
+      type: file_exists
+      path: "src/models/Notification.ts"
+      expect:
+        exists: true
+  - id: L2
+    description: "CREATE: add POST /notifications endpoint and notification[12D[K
+notification model extensions"
+    verification:
+      type: cli
+      command: "pnpm build --filter=@verified-attention/api"
+      expect:
+        exit_code: 0
+  - id: L3
+    description: "VERIFY: POST /notifications sends an email and returns a [K
+notification ID with priority"
+    verification:
+      type: http
+      method: POST
+      url: http://localhost:3000/notifications
+      headers:
+        Authorization: "Bearer {{test_token}}"
+      body:
+        recipient: "user@example.com"
+        subject: "Test Notification"
+        body: "This is a test notification."
+        priority: "high"
+      expect:
+        status: 202
+        json_schema:
+          type: object
+          properties:
+            notificationId: { type: string }
+          required: [notificationId]
+  - id: L4
+    description: "CREATE: write integration tests for POST /notifications"
+    verification:
+      type: cli
+      command: "pnpm test --filter=@verified-attention/api -- --testPathPat[13D[K
+--testPathPattern=notifications-integration-test"
+      expect:
+        exit_code: 0
+global_goals_refs: ["G5", "G13"]
+context:
+  language: TypeScript
+  framework: Express
+  orm: Prisma
+  test_framework: Vitest
+

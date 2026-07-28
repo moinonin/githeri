@@ -2,3 +2,6 @@
 .env
 *.pyc
 karakana/
+models/
+output/
+apps/

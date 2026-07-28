@@ -1,7 +1,7 @@
 [project]
-name = "add_evidence_endpoint"
+name = "add_notifications_endpoint"
 version = "0.1.0"
-description = "Add POST /api/evidence endpoint"
+description = "Add POST /notifications endpoint for sending email and push notifications"
 requires-python = ">=3.11"
 dependencies = []
 

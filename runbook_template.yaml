@@ -1,0 +1,33 @@
+# Generic Runbook Template
+# Placeholders will be replaced per prompt:
+#   {{DEPENDENCIES_CMD}} - command to install dependencies
+#   {{START_CMD}}      - command to start the application (run in background)
+#   {{TEST_CMD}}       - command to run tests
+#   {{VERIFY_CMD}}     - command to verify the endpoint functionality
+#   {{SETUP_CMD}}      - optional setup step
+
+version: 1
+steps:
+  - name: Setup environment
+    command: "{{SETUP_CMD}}"
+
+  - name: Install dependencies
+    command: "{{DEPENDENCIES_CMD}}"
+
+  - name: Start application
+    command: "{{START_CMD}} &"
+    pid: {{SERVER_PID}}
+
+  - name: Run tests
+    command: "{{TEST_CMD}}"
+
+  - name: Verify functionality
+    command: |
+      {{VERIFY_CMD}}
+      if [ $? -ne 0 ]; then
+        echo "Verification failed"
+        exit 1
+      fi
+
+  - name: Stop application
+    command: kill {{SERVER_PID}}

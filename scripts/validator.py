@@ -2,6 +2,63 @@ import yaml
 import json
 import re
 
+# -------------------- YAML OUTPUT SANITIZER --------------------
+# Raw LLM output (especially from `ollama run`) often contains ANSI escape
+# sequences and terminal control characters (e.g. \x1b[1D, \x1b[K, \x1b[3D)
+# that break yaml.safe_load().  This sanitizer strips them BEFORE parsing.
+#
+# Verified against the real Ollama output in testyaml.yml which contained
+# sequences like \x1b[1D\x1b[K (cursor left + erase line) mid-YAML.
+
+# Match ANSI escape sequences: \x1b[ ... letter (CSI sequences)
+_ANSI_CSI_PATTERN = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+
+# Match other common control sequences that Ollama/Curses emit
+# \x1b[K  = erase line (already covered by CSI above, but be explicit)
+# \r      = carriage return (not a newline; strip)
+# \x08    = backspace
+# \x00-\x08, \x0b, \x0c, \x0e-\x1f = other C0 control chars (keep \t \n)
+_OTHER_CONTROL_PATTERN = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f\r]')
+
+
+def clean_yaml_output(raw: str) -> str:
+    """Strip ANSI escape sequences and terminal control characters from raw LLM output.
+
+    Called before yaml.safe_load() in both validate_spec() and
+    run_pipeline.py's extract_yaml().  Handles:
+      - CSI sequences: \x1b[1D, \x1b[K, \x1b[3D, \x1b[12D, etc.
+      - Carriage returns, backspaces, other C0 control chars
+      - Preserves tabs (\x09) and newlines (\x0a)
+      - Joins orphaned newlines left by CSI removal (e.g. "p\npush" -> "ppush"
+        when the original was "p\x1b[1D\x1b[K\npush" meaning the cursor went
+        back and the word continued on the same logical line)
+
+    Returns the cleaned string.  Does NOT alter YAML semantics — only
+    removes non-printable injection from terminal rendering.
+    """
+    if not raw:
+        return raw
+
+    # Phase 1: Remove the ANSI CSI sequences (e.g. \x1b[1D\x1b[K).
+    # These are "cursor left + erase line" — the model was typing, backspacing,
+    # and retyping.  After removing them, the text fragments that were on the
+    # same logical line are now separated only by a newline, so we join them.
+    parts = _ANSI_CSI_PATTERN.split(raw)
+    if len(parts) > 1:
+        # The fragments separated by CSI removal should be joined (no newline)
+        # because the cursor moved back on the same line, not to a new line.
+        # But if the raw text had real newlines BEFORE a CSI sequence, those
+        # are preserved in the split fragments themselves.
+        # Strategy: join fragments that were CSI-separated, then clean newlines.
+        joined = ''.join(parts)
+    else:
+        joined = raw
+
+    # Phase 2: Remove remaining C0 control chars (keep \t and \n)
+    cleaned = _OTHER_CONTROL_PATTERN.sub('', joined)
+
+    return cleaned
+
 # -------------------- CANONICAL VOCABULARY --------------------
 # The single source of truth for assertion keys, shared by the validator,
 # the generation prompt, and the COMMAND_RUNWAY runbook template.
@@ -194,6 +251,10 @@ def validate_spec(yaml_str):
 
     Returns a list of error strings.  Empty list == valid.
     """
+    # Sanitize: strip ANSI escape sequences and terminal control chars
+    # that raw LLM output (especially `ollama run`) injects into the YAML.
+    yaml_str = clean_yaml_output(yaml_str)
+
     # Pre-process: fix double-quoted scalars with invalid regex escapes
     # before attempting to parse.
     yaml_str, _fixes = preprocess_yaml(yaml_str)
@@ -233,10 +294,12 @@ def validate_spec(yaml_str):
     # ---- global_goals_refs ----
     if "global_goals_refs" in spec and spec["global_goals_refs"]:
         for ref in spec["global_goals_refs"]:
-            if ref not in VALID_GLOBAL_GOALS:
+            # Handle both string refs ("G5") and dict refs ({"goal": "G5", ...})
+            ref_str = ref if isinstance(ref, str) else ref.get("goal") if isinstance(ref, dict) else None
+            if not ref_str or ref_str not in VALID_GLOBAL_GOALS:
                 errors.append(
                     f"Invalid global_goals_refs: '{ref}'. "
-                    f"Must be one of {sorted(VALID_GLOBAL_GOALS)}"
+                    f"Must be one of {sorted(VALID_GLOBAL_GOALS)} or a dict with 'goal' field"
                 )
 
     # ---- local_goals ----

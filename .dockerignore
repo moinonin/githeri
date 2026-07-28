@@ -1,0 +1,41 @@
+# Build artifacts and dependencies (will be installed inside container)
+.venv
+node_modules
+__pycache__
+*.pyc
+*.egg-info
+dist
+build
+
+# Model weights (33GB — never send to Docker)
+models
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+
+# Git and docs (not needed for execution)
+.git
+.gitignore
+*.md
+docs
+dashboard
+
+# Data files (keep small data, exclude large)
+data/*.jsonl
+data/eval_results*.json
+
+# Docker meta (avoid recursive context)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Misc
+*.log
+.env
+testyaml.yml
+run_autonomous.sh
+runbook_template.yaml
+check_adapter.py
+pullmodel.py
