@@ -278,3 +278,88 @@ tests/
 | `make uninstall-skill` | Remove spec-forge skill |
 | `make test` | Run full test suite (78 tests) |
 | `make clean` | Delete training_data.jsonl |
+## Autonomous Execution System
+
+The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using an LLM agent (with self-healing capabilities).
+
+The system can be run in multiple ways:
+
+1. **Local Execution** (using the host environment)
+2. **Docker-Isolated Execution** (for a clean, reproducible environment)
+3. **Makefile Commands** (project-level operations)
+4. **Direct Skill Usage** (for advanced users)
+5. **Sprint-Based Execution** (executing specific sprints from the SPRINTS.md file)
+
+For detailed instructions on each method, expected outputs, and troubleshooting, please see [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md).
+
+Below is a quick reference for the most common ways to run the autonomous system:
+
+### Quick Reference
+
+```bash
+# Basic local execution
+python3 run_autonomous.py --prompt "Add a POST /notifications endpoint"
+
+# Docker-isolated execution
+python3 run_autonomous.py --prompt "Add user authentication" --docker
+
+# Using Hermes as the execution backend
+python3 run_autonomous.py --prompt "Implement rate limiting" --executor hermes
+
+# Makefile: generate spec and plan
+make spec-and-plan PROMPT="Add file upload endpoint"
+
+# Makefile: full autonomous cycle (spec -> plan -> runbook -> execute -> report)
+make autonomous-cycle SPEC=specs/test-endpoint.yaml
+
+# Makefile: full autonomous cycle with Docker
+make autonomous-cycle SPEC=specs/test-endpoint.yaml && make dashboard
+```
+
+The system produces the following outputs on success:
+- `spec.yaml`: Validated feature specification
+- `PLAN.md`: Implementation plan with stages and goals
+- `RUNBOOK.md`: Executable command runway with verification criteria (updated with execution log)
+- Generated and modified source code implementing the feature
+- Metrics stored in `metrics/autonomous.db` (when observability enabled)
+- HTML dashboard at `dashboard/autonomous.html` (when observability enabled)
+
+For more information, including project-type detection, self-healing capabilities, and extended configuration, see the full documentation.
+
+
+
+
+## Autonomous Execution System
+
+The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using an LLM agent (with self-healing capabilities).
+
+The system can be run in multiple ways:
+
+1. **Local Execution** (using the host environment)
+2. **Docker-Isolated Execution** (for a clean, reproducible environment)
+3. **Makefile Commands** (project-level operations)
+4. **Direct Skill Usage** (for advanced users)
+5. **Sprint-Based Execution** (executing specific sprints from the SPRINTS.md file)
+
+For detailed instructions on each method, expected outputs, and troubleshooting, please see [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md).
+
+Below is a quick reference for the most common ways to run the autonomous system:
+
+### Quick Reference
+
+```bash
+# Basic local execution
+python3 run_autonomous.py --prompt "Add a POST /notifications endpoint"
+
+# Docker-isolated execution
+python3 run_autonomous.py --prompt "Add user authentication" --docker
+
+# Using Hermes as the execution backend
+python3 run_autonomous.py --prompt "Implement rate limiting" --executor hermes
+
+# Makefile: generate spec and plan
+make spec-and-plan PROMPT="Add file upload endpoint"
+
+# Makefile: full autonomous cycle (spec -> plan -> runbook -> execute -> report)
+make autonomous-cycle SPEC=specs/test-endpoint.yaml
+```

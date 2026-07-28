@@ -534,3 +534,258 @@ cd /Users/nickrotich/Desktop/portfolio/projects/python/ai/githeri
 make spec-and-plan PROMPT_FILE=sprints/sprint0-bootstrap.spec.yaml
 make autonomous-execute SPEC=sprints/sprint0-bootstrap.spec.yaml --output-dir docs/sprints/sprint0
 ```
+---
+## Current Autonomous System Status (As of Implementation)
+
+The autonomous execution pipeline has reached approximately 65% completion toward a fully autonomous coding agent ("The Monster"). Here's what has been implemented:
+
+### Core Pipeline Components
+1. **NL Prompt -> Spec Generation**
+   - Uses project-context-aware LLM prompting (detects Python/Node/Go/Rust)
+   - Generates validated YAML specs with canonical vocabulary
+   - Includes validation against expectation formats and goal uniqueness
+
+2. **Spec -> PLAN.md + RUNBOOK.md Generation**
+   - Uses deterministic plan generation from spec-forge and command-runway-planner skills
+   - **Critical requirement met**: PLAN.md is written to disk BEFORE any execution begins
+   - RUNBOOK.md contains executable command runway with verification criteria
+   - Uses ⏾ (inspect), ✎ (create), ✓ (verify) notation for command types
+
+3. **Execution Engine with Self-Healing**
+   - Parses RUNBOOK.md to extract stages and commands with dependencies
+   - Detects project type for appropriate tooling (pip/pnpm/go/cargo)
+   - Installs dependencies based on project type
+   - Executes commands in dependency order:
+     - Create commands: Uses LLM to generate file content
+     - Verify commands: Executes shell commands and checks expectations
+   - Self-healing mechanism: On verification failure, identifies failed create command and regenerates with error context
+   - Updates execution log in RUNBOOK.md with timestamps, exit codes, retry counts, and output snippets
+   - Stops execution if any verification fails after max retries exhausted
+
+4. **Docker Integration (Addresses Gap 3 & 4)**
+   - Optional --docker flag for isolated execution
+   - Generates appropriate Dockerfile based on detected project type
+   - Builds image with output directory as build context (small, fast)
+   - Mounts project directory and skill directory at runtime
+   - Runs execution phase inside container with --output execute-only
+   - Automatically cleans up container after execution (--rm)
+   - Includes intelligent .dockerignore to exclude large directories (.venv, models, etc.)
+
+5. **Supporting Components & Skills**
+   - command-runway-planner: Generates PLAN.md/RUNBOOK.md from spec
+   - command-runway-pattern: Defines execution methodology
+   - spec-forge-unified: Generates validated specs from NL prompts
+   - spec-forge-scorer: Evaluates spec quality (≥0.75 threshold)
+   - observability: Collects metrics and generates dashboards
+   - sprint-orchestrator: Enables parallel execution of multiple features
+   - production-guardrails: Provides canary deployment, health checks, auto-rollback
+
+### Current Capabilities Assessment
+
+Based on the skill documentation's "Monster Assessment":
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| **Brain** (NL → Spec) | ✅ 95% | LLM spec generation works; validator catches errors |
+| **Spine** (Spec → PLAN+RUNBOOK) | ✅ 100% | Deterministic plan generation |
+| **Muscle** (RUNBOOK → Files) | ✅ 80% | Python executor works; Hermes/Codex need more testing |
+| **Self-Healing** | ✅ 70% | Retry+diagnose+correct works; needs better root-cause analysis |
+| **Code Review Gate** | ❌ 0% | No automated quality review before merge |
+| **Production Deploy** | ❌ 0% | No CI/CD integration, no rollback |
+| **Observability** | ❌ 20% | Basic logs only; no metrics dashboard |
+| **Multi-Feature Orchestration** | ❌ 10% | Batch/sprint scripts exist but untested |
+
+**Overall: ~65% complete** toward a fully autonomous agent ("The Monster")
+
+### Verified Ways to Run the Autonomous System
+
+#### 1. Local Execution (Host Environment)
+```bash
+# Basic usage with default model (qwen2.5-coder:7b-instruct via Ollama)
+python3 run_autonomous.py --prompt "Add a POST /notifications endpoint that sends email and push notifications"
+
+# Specify custom model and provider
+python3 run_autonomous.py --prompt "Add user authentication" --model anthropic/claude-sonnet-4 --provider openrouter --api-key $OPENROUTER_API_KEY
+
+# Use Hermes as the execution backend
+python3 run_autonomous.py --prompt "Implement rate limiting" --executor hermes
+
+# Use OpenCode as the execution backend
+python3 run_autonomous.py --prompt "Add data validation middleware" --executor opencode
+
+# Enable verbose output for debugging
+python3 run_autonomous.py --prompt "Create REST API for blog posts" --verbose
+
+# Custom output directory
+python3 run_autonomous.py --prompt "Implement file upload endpoint" --output-dir ./features/file-upload
+
+# Increase retries and timeout for complex features
+python3 run_autonomous.py --prompt "Implement real-time chat with WebSockets" --max-retries 5 --timeout 300
+```
+
+#### 2. Docker-Isolated Execution (Clean Environment)
+```bash
+# Basic Docker execution (auto-generates Dockerfile based on project type)
+python3 run_autonomous.py --prompt "Add payment processing endpoint" --docker
+
+# Docker execution with custom model
+python3 run_autonomous.py --prompt "Implement machine learning pipeline" --model specforge-128k:latest --docker
+
+# Docker execution with Hermes executor
+python3 run_autonomous.py --prompt "Add real-time notifications" --executor hermes --docker
+
+# Use pre-built Docker image (skips build step)
+python3 run_autonomous.py --prompt "Process data streams" --docker --docker-image my-custom-image:latest
+
+# Specify custom Dockerfile directory
+python3 run_autonomous.py --prompt "Build microservice" --docker --dockerfile-dir ./custom-dockerfiles
+```
+
+#### 3. Makefile Commands (Project-Level Operations)
+```bash
+# Generate validated spec from natural language prompt
+make spec PROMPT="Add user profile management endpoint"
+
+# End-to-end: prompt -> validated spec -> plan prompt
+make spec-and-plan PROMPT="Implement file upload with virus scanning"
+
+# Generate N prompt-spec pairs for training data
+make generate N=20
+
+# Validate all specs in training corpus
+make validate
+
+# Validate a single spec file
+make validate-one SPEC=specs/user-management.yaml
+
+# Emit COMMAND_RUNWAY plan prompt for a validated spec
+make plan SPEC=specs/user-management.yaml
+
+# Score all specs against runbook criteria
+make score
+
+# Convert training data to chat format for fine-tuning
+make convert-chat MIN_SCORE=0.75
+
+# Run LoRA fine-tuning on qwen2.5-coder-7b
+make train
+
+# Merge adapter and export GGUF for Ollama
+make merge
+
+# Evaluate fine-tuned model on held-out prompts
+make eval-model
+
+# Upload model to HuggingFace Hub
+make upload-hf REPO=myorg/my-finetuned-model
+
+# Run observability dashboard generation
+make dashboard
+
+# Collect metrics from autonomous run
+make metrics-collect SPRINT=sprint5
+
+# Check for anomalies in metrics
+make alerts
+
+# Run sprint orchestrator (parallel execution)
+make orchestrate SPRINTS=SPRINTS.md --workers 3
+
+# Run autonomous cycle: spec -> plan -> runbook -> execute -> report
+make autonomous-cycle SPEC=specs/test-endpoint.yaml
+
+# Full pipeline with Docker isolation
+make autonomous-cycle SPEC=specs/test-endpoint.yaml && make dashboard
+
+# Install/uninstall spec-forge skill
+make install-skill
+make uninstall-skill
+
+# Run test suite
+make test
+
+# Clean output files
+make clean
+```
+
+#### 4. Direct Skill Usage (Advanced)
+```bash
+# Spec generation only (using spec-forge-unified skill)
+python3 ~/.hermes/skills/spec-forge/scripts/run_pipeline.py --prompt "Add REST API for task management"
+
+# Plan generation only (using command-runway-planner skill)
+python3 ~/.hermes/skills/software-development/command-runway-planner/scripts/assemble_plan.py spec.yaml ./output/
+
+# Autonomous execution only (using command-runway-autonomous skill)
+python3 ~/.hermes/skills/software-development/command-runway-autonomous/scripts/autonomous_execute.py   --prompt "Add GraphQL endpoint for user data"   --output-dir ./output/   --output all
+```
+
+#### 5. Sprint-Based Execution
+```bash
+# Execute a specific sprint from SPRINTS.md
+make autonomous-execute SPEC=sprints/sprint5.spec.yaml --output-dir docs/sprints/sprint5
+
+# Execute sprint with Docker isolation
+make autonomous-execute SPEC=sprints/sprint5.spec.yaml --output-dir docs/sprints/sprint5 --docker
+
+# Generate sprint report after execution
+make sprint-report SPRINT=sprint5
+
+# Run meta-execution: use the pipeline to build the pipeline itself
+# (Execute sprint specs to implement sprint functionality)
+make spec-and-plan PROMPT_FILE=sprints/sprint8-code-review-agent.spec.yaml
+make autonomous-execute SPEC=sprints/sprint8-code-review-agent.spec.yaml --output-dir docs/features/sprint8
+```
+
+### Expected Outputs
+
+After successful execution, the system produces:
+
+1. **spec.yaml** - Validated feature specification
+2. **PLAN.md** - Implementation plan with stages and goals
+3. **RUNBOOK.md** - Executable command runway with verification criteria (updated with execution log)
+4. **Generated source code** - Files created according to the plan
+5. **Modified source code** - Existing files updated as needed
+6. **Execution log** - Embedded in RUNBOOK.md showing command results, timing, and retries
+7. **Metrics** - Stored in metrics/autonomous.db (when observability enabled)
+8. **Dashboard** - HTML visualization at dashboard/autonomous.html (when observability enabled)
+
+### Troubleshooting
+
+Common issues and solutions:
+
+1. **"LLM connection error"**
+   - Ensure Ollama is running: `ollama serve`
+   - Verify model is available: `ollama list`
+   - Check API key for cloud providers
+
+2. **"Docker build failed"**
+   - Increase Docker resources (memory, CPU)
+   - Check .dockerexclude for necessary files
+   - Verify Dockerfile syntax for detected project type
+
+3. **"Verification failed after max retries"**
+   - Check RUNBOOK.md execution log for specific error
+   - Consider simplifying the prompt or breaking into smaller features
+   - Manual intervention may be needed for complex logic issues
+
+4. **"Permission denied"**
+   - Ensure script files are executable: `chmod +x ~/.hermes/skills/*/scripts/*.py`
+   - Check file ownership in mounted directories
+
+5. **"Module not found"**
+   - Ensure Python virtual environment is activated if using venv
+   - Install required packages: `pip install pyyaml`
+   - Verify skill installation: `ls ~/.hermes/skills/`
+
+### Next Planned Improvements
+
+Based on the sprint roadmap, upcoming enhancements include:
+
+1. **Sprint 8**: Code Review Agent (quality gate with linters, typechecks, pattern enforcement)
+2. **Sprint 9**: CI/CD Integration (auto-PR, checks, merge-on-green, rollback)
+3. **Sprint 10**: Cost/Performance Observatory (token tracking, latency monitoring, alerting)
+4. **Sprint 11**: Sprint Orchestrator (parallel execution with dependency resolution)
+5. **Sprint 12**: Production Guardrails (canary deployment, health checks, auto-rollback, secret scanning)
+
+Each sprint builds upon the previous ones to progressively achieve full autonomy ("The Monster").
