@@ -85,6 +85,17 @@ def parse_args():
     parser.add_argument("--executor", type=str, default="python",
                         choices=["python", "hermes", "opencode"],
                         help="Execution backend (default: python)")
+
+    # Executor model (optional — defaults to --model if not set)
+    parser.add_argument("--exec-model", type=str, default=None,
+                        help="Model for executor stage (default: same as --model)")
+    parser.add_argument("--exec-provider", type=str, default=None,
+                        choices=["ollama", "openrouter", "openai", "custom"],
+                        help="Provider for executor stage (default: same as --provider)")
+
+    # Stale file cleanup
+    parser.add_argument("--fresh", action="store_true", default=False,
+                        help="Remove output directory before running (cleans stale files)")
     parser.add_argument("--verbose", "-v", action="store_true", default=False,
                         help="Print detailed execution output")
     parser.add_argument("--clean", action="store_true", default=False,
@@ -137,6 +148,13 @@ def main():
 
     # Resolve output directory
     output_path = resolve_output_dir(args.prompt, args.output_dir)
+
+    # --fresh: remove stale output before running
+    if args.fresh and output_path.exists():
+        import shutil
+        shutil.rmtree(output_path)
+        print(f"  [fresh] Removed stale output: {output_path}")
+
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Resolve LLM config
@@ -175,6 +193,9 @@ def main():
     print(f"  Model:     {args.model}")
     print(f"  Provider:  {args.provider}")
     print(f"  Base URL:  {base_url}")
+    if args.exec_model:
+        print(f"  Exec Model:    {args.exec_model}")
+        print(f"  Exec Provider: {args.exec_provider or args.provider}")
     print(f"  Docker:    {'YES (isolated container)' if args.docker else 'NO (host execution)'}")
     print(f"  Output:    {output_path}")
     print(f"  Executor:  {args.executor}")
@@ -208,6 +229,12 @@ def main():
 
     if args.docker:
         cmd.append("--docker")
+
+    # Pass executor model/provider if different from spec model
+    if args.exec_model:
+        cmd.extend(["--exec-model", args.exec_model])
+    if args.exec_provider:
+        cmd.extend(["--exec-provider", args.exec_provider])
 
     if args.verbose:
         cmd.append("--yolo")  # Auto-approve (passed to Hermes if --executor hermes)

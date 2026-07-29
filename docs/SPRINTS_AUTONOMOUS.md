@@ -1,57 +1,99 @@
-# Sprint 11 - Sprint Orchestrator
+# SPRINTS — Autonomous Pipeline Execution
 
-## Overview
-This sprint implements the SprintOrchestrator skill that enables parallel execution of sprint tasks with proper dependency resolution and resource management.
+Tracking model/executor experiments and decisions for the command-runway-autonomous pipeline.
 
-## Key Components
-- **DependencyGraph**: Builds and validates dependency graphs from sprint specs
-- **WorkerPool**: Manages parallel execution with resource tracking
-- **SprintOrchestrator**: Coordinates graph analysis and parallel execution
-- **SKILL.md**: Documentation for the skill
-- **SKILL.md**: Documentation for the skill
+---
 
-## How It Works
-1. **Graph Construction**: Parses sprint spec YAML to build a dependency graph
-2. **Cycle Detection**: Identifies circular dependencies before execution
-3. **Parallel Grouping**: Uses topological sorting to group tasks by parallel execution capability
-4. **Worker Pool**: Manages parallel execution with resource constraints
-5. **Execution**: Runs tasks in parallel groups while respecting resource limits
+## Summary (2026-07-29)
 
-## Usage
-### Command Line
-```bash
-# Execute sprint 11
-make -f Makefile.sprints sprint-execute SPRINT=sprint11
-```
+Tested the full autonomous pipeline (NL prompt → spec → plan → runbook → execute) across multiple model and executor configurations. Spec generation is stable. Hermes executor requires further prompt engineering to drive actual file creation. Scoring expanded to cover spec quality, execution outcomes, and pipeline health.
 
-### Test Prompt Example
-```bash
-# Test prompt from prompt_generator.py
-python3 run_autonomous.py --prompt "Implement a background job that recalculates confidence scores for pending verification sessions every five minutes. Skip completed sessions and log processing statistics. Include unit tests covering successful recalculation and failure scenarios."
-```
+---
 
-### Verification Gates
-- **L1**: SprintOrchestrator implementation exists
-- **L2**: Dependency graph with cycle detection and parallel groups
-- **L3**: Worker pool with resource management
-- **L4**: SPRINTS.md contains depends_on and parallel_group syntax
-- **L5**: Orchestrator runs sprints in parallel with correct dependencies
-- **L6**: Full orchestration with failure handling and retry logic
+## Known Issues & Fixes
 
-### Verification Command
-```bash
-make -f Makefile.sprints orchestrate SPRINTS=test_sprints.md --dry-run
-```
+### 1. YAML Truncation / Colon-in-Description (FIXED)
 
-### Expected Output
-```
-Parallel groups: 3
-  Group 1: task1
-  Group 2: task2, task3
-  Group 4: task4
-```
+**Problem:** `qwen2.5-coder:7b-instruct` generates specs with unquoted colons in `description:` fields (e.g. `description: CREATE: add file`), breaking `yaml.safe_load` at parse time. Also truncates YAML mid-document when hitting token limits.
 
-### Error Handling
-- Circular dependencies cause immediate failure with clear error message
-- Worker pool respects max_workers limit
-- All tasks must complete successfully for success status
+**Fix:** Added retry loop in `generate_spec_with_llm()` in `autonomous_execute.py`. On `yaml.YAMLError`, re-prompts the LLM with explicit instruction to quote values containing colons. 3 retries max.
+
+**Files:** `autonomous_execute.py` lines 895-924 (parse retry loop), spec-forge-scorer `spec_quality_score()` detection.
+
+---
+
+### 2. Hermes Executor — Context Window Gate (RESOLVED)
+
+**Problem:** `qwen2.5-coder:7b-instruct` has 32K context. Hermes Agent requires minimum 64K. Agent refuses to start.
+
+**Resolved by:** Using models with 128K context (specforge-128k, qwen3.5-4b-128k). Created custom Ollama modelfiles with `PARAMETER num_ctx 131072`.
+
+---
+
+### 3. Hermes Executor — Model Tools Support (PARTIALLY RESOLVED)
+
+**Problem:** `specforge-128k:latest` lacks tool-calling capability in its Ollama modelfile template. Hermes needs tools for `hermes chat -q` execution. Returns HTTP 400 "does not support tools".
+
+**Resolution:** `qwen3.5-4b-128k` supports tools and passes the 64K context gate. It connects successfully through the proxy at `localhost:20128` (custom provider). However, the model doesn't execute runbook commands — it calls `clarify` or `skill_view` instead of writing files. This is a prompt engineering issue in `execute_with_hermes()`, not a model capability issue.
+
+**Model compatibility matrix:**
+
+| Model | Context | Tools | Speed (M1 16GB) | Spec Gen | Executor | Status |
+|-------|---------|-------|-----------------|----------|----------|--------|
+| qwen2.5-coder:7b-instruct | 32K | Yes | Fast | Works (with YAML retry) | Fails 64K gate | Deprecated |
+| specforge-128k:latest | 128K | No | Fast | Works (clean YAML) | Fails tools (HTTP 400) | Spec-only |
+| qwen3.5-9b-code:128k | 128K | Yes | Slow | Works | Times out at 600s | Too slow |
+| qwen3.5-4b-128k | 128K | Yes | Fast | Works (clean YAML) | Connects but doesn't execute | Needs prompt fix |
+| qwen3.5:0.8b | 2048 | TBD | Very fast | Untested | Context too small | N/A |
+
+---
+
+### 4. Scoring Expansion (DONE)
+
+Added three new scoring dimensions to `spec-forge-scorer/scripts/runbook_scorer.py`:
+
+- **`spec_quality_score()`** — truncated YAML detection, colon-in-description detection, goal count checks, verification-type checks, sequential ID checks
+- **`execution_score()`** — parses RUNBOOK Section 4 (execution log) and Section 5 (goal checks), penalizes FAIL/PENDING, detects crash signatures (uvicorn, click/core.py, "Stage 4 FAILED", "EXECUTION FAILED")
+- **`pipeline_health_score()`** — LLM call count, YAML parse retry count, spec validation retry count, timeouts, connection errors, stage failures, pipeline FAILED status
+
+Tests: `tests/test_runbook_scorer.py` — 38 tests, all passing.
+
+---
+
+### 5. Pipeline UX Improvements (DONE)
+
+Added three new flags to `run_autonomous.py` and `autonomous_execute.py`:
+
+- `--fresh` — removes the output directory before each run (cleans stale files from prior experiments)
+- `--exec-model` — use a different model for the executor stage than for spec generation
+- `--exec-provider` — use a different provider for the executor stage
+
+Also fixed: executor timeout now scales with `--timeout` (at least 600s for Hermes agent tool-calling).
+
+---
+
+## Decision Log
+
+### 2026-07-29: Split-model vs single-model
+
+Implemented `--exec-model` / `--exec-provider` flags to allow split-model operation. Tested both approaches:
+
+- **Split:** specforge-128k (Ollama, spec gen) + qwen3.5-4b-128k (proxy, executor) — spec gen works, executor connects but doesn't execute commands
+- **Single:** qwen3.5-4b-128k (proxy, both stages) — spec gen works, executor connects but doesn't execute commands
+
+Both approaches have the same executor bottleneck: the Hermes executor prompt doesn't give the model enough direction to actually write files. The split approach adds complexity without benefit until the executor prompt is fixed.
+
+**Current recommendation:** Use single-model (qwen3.5-4b-128k via proxy) for simplicity. The split flags remain available for when a larger tools-capable model is needed for execution.
+
+### 2026-07-29: Python executor (fallback option)
+
+If the Hermes executor prompt fix proves difficult, fix the `--executor python` path instead. Known bug: the Python executor tries to start uvicorn for HTTP verification, causing recursion when run from within `autonomous_execute.py`. Fix: detect and prevent the recursive invocation.
+
+---
+
+## Next Steps
+
+1. **Fix Hermes executor prompt** — make `execute_with_hermes()` prompt explicit: "For each `write_file` command, generate the file content yourself using the spec and write it to disk." The 4B model currently calls `clarify` or `skill_view` instead of acting.
+2. **Fix `--executor python` path** — prevent the uvicorn recursion crash (original Stage 4 failure). This bypasses Hermes entirely and runs runbook commands directly via the LLM-backed file generator.
+3. **Proxy dependency** — the executor requires the proxy at `localhost:20128` to be running. Document the startup procedure or add a health-check before execution.
+4. **Score a real run** — once the executor actually creates files and runs tests, use the new `execution_score()` and `pipeline_health_score()` functions to evaluate the full pipeline end-to-end.

@@ -85,6 +85,8 @@ The scorer (`scripts/runbook_scorer.py`) evaluates five weighted categories:
 **Hard gate**: If any of the three runway stages (Inspect, Create/Modify,
 Verify) is missing, the spec scores **0.0** and is not runbook-ready.
 
+---
+
 ## Quick Start
 
 ### 1. Setup
@@ -157,6 +159,8 @@ make upload-hf REPO=githeri/qwen2.5-coder-7b-specforge PRIVATE=1  # private repo
 make install-skill             # copies skills/spec-forge/ to ~/.hermes/skills/spec-forge/
 ```
 
+---
+
 ## Training Pipeline (Fine-tuning qwen2.5-coder:7b)
 
 ```bash
@@ -193,6 +197,8 @@ ollama create specforge -f models/qwen2.5-coder-7b-specforge-gguf/Modelfile
 
 Then use it in the pipeline by setting `MODEL=specforge` in `scripts/run_pipeline.py`.
 
+---
+
 ## Generation + Scoring Architecture
 
 Generation and scoring are decoupled:
@@ -209,6 +215,8 @@ Generation and scoring are decoupled:
 - **Hard gate** (`runbook_scorer.py`): specs missing any of Inspect/Create/Verify
   stages score 0.0. The scorer uses harsh penalties for missing dependencies,
   context mismatches, and missing stage types.
+
+---
 
 ## Repository layout
 
@@ -245,8 +253,10 @@ data/
 tests/
   test_validator.py       — 39 tests covering the canonical vocabulary + gates
   test_plan_from_spec.py  — 6 tests covering spec extraction + prompt assembly
-  test_runbook_scorer.py  — 24 tests covering the runbook scorer
+  test_runbook_scorer.py  — 38 tests covering the runbook scorer (including new spec/execution/pipeline health checks)
 ```
+
+---
 
 ## Prerequisites
 
@@ -255,6 +265,8 @@ tests/
 - `requirements.txt` deps — install via `pip install -r requirements.txt`
 - For training: CUDA GPU with 8GB+ VRAM, Unsloth, trl, peft, bitsandbytes
 - For HF upload: `HF_TOKEN` set in `.env` file
+
+---
 
 ## Make Targets Quick Reference
 
@@ -278,6 +290,9 @@ tests/
 | `make uninstall-skill` | Remove spec-forge skill |
 | `make test` | Run full test suite (78 tests) |
 | `make clean` | Delete training_data.jsonl |
+
+---
+
 ## Autonomous Execution System
 
 The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using an LLM agent (with self-healing capabilities).
@@ -291,8 +306,6 @@ The system can be run in multiple ways:
 5. **Sprint-Based Execution** (executing specific sprints from the SPRINTS.md file)
 
 For detailed instructions on each method, expected outputs, and troubleshooting, please see [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md).
-
-Below is a quick reference for the most common ways to run the autonomous system:
 
 ### Quick Reference
 
@@ -324,42 +337,66 @@ The system produces the following outputs on success:
 - Metrics stored in `metrics/autonomous.db` (when observability enabled)
 - HTML dashboard at `dashboard/autonomous.html` (when observability enabled)
 
-For more information, including project-type detection, self-healing capabilities, and extended configuration, see the full documentation.
+---
 
+## Autonomous Execution — Recent Enhancements (2026-07-29)
 
+### New Flags for `run_autonomous.py`
 
+| Flag | Purpose |
+|------|---------|
+| `--fresh` | Remove the output directory before running (cleans stale files from prior experiments) |
+| `--exec-model` | Use a different model for the executor stage than for spec generation |
+| `--exec-provider` | Use a different provider for the executor stage |
+| `--timeout` | Command timeout in seconds (default: 120); Hermes executor timeout scales to `max(timeout*5, 600s)` |
 
-## Autonomous Execution System
+### Split-Model Architecture (Implemented)
 
-The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using an LLM agent (with self-healing capabilities).
-
-The system can be run in multiple ways:
-
-1. **Local Execution** (using the host environment)
-2. **Docker-Isolated Execution** (for a clean, reproducible environment)
-3. **Makefile Commands** (project-level operations)
-4. **Direct Skill Usage** (for advanced users)
-5. **Sprint-Based Execution** (executing specific sprints from the SPRINTS.md file)
-
-For detailed instructions on each method, expected outputs, and troubleshooting, please see [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md).
-
-Below is a quick reference for the most common ways to run the autonomous system:
-
-### Quick Reference
+You can now use one model for spec generation and a different model for execution:
 
 ```bash
-# Basic local execution
-python3 run_autonomous.py --prompt "Add a POST /notifications endpoint"
-
-# Docker-isolated execution
-python3 run_autonomous.py --prompt "Add user authentication" --docker
-
-# Using Hermes as the execution backend
-python3 run_autonomous.py --prompt "Implement rate limiting" --executor hermes
-
-# Makefile: generate spec and plan
-make spec-and-plan PROMPT="Add file upload endpoint"
-
-# Makefile: full autonomous cycle (spec -> plan -> runbook -> execute -> report)
-make autonomous-cycle SPEC=specs/test-endpoint.yaml
+# Spec generation via raw Ollama (fast, clean YAML); execution via custom proxy (tools-capable)
+python3 run_autonomous.py \
+  --prompt "Add scheduled invoice generation" \
+  --model specforge-128k:latest --provider ollama \
+  --exec-model qwen3.5-4b-128k --exec-provider custom \
+  --executor hermes --fresh --timeout 120
 ```
+
+### Expanded Scoring (`spec-forge-scorer`)
+
+Three new scoring functions added to `scripts/runbook_scorer.py`:
+
+1. **`spec_quality_score()`** — detects truncated YAML, unquoted colons in descriptions, goal count issues, missing verification types
+2. **`execution_score()`** — parses RUNBOOK execution log (Section 4) and goal checks (Section 5); penalizes failures, detects crash signatures (uvicorn, click/core.py, "Stage 4 FAILED")
+3. **`pipeline_health_score()`** — counts LLM calls, YAML parse retries, validation retries, timeouts, connection errors, stage failures
+
+Tests: `tests/test_runbook_scorer.py` — 38 tests, all passing.
+
+---
+
+## Model Compatibility Matrix (Autonomous Execution)
+
+| Model | Context | Tools | Speed (M1 16GB) | Spec Gen | Hermes Executor | Status |
+|-------|---------|-------|-----------------|----------|-----------------|--------|
+| qwen2.5-coder:7b-instruct | 32K | Yes | Fast | Works (with YAML retry) | Fails 64K gate | Deprecated |
+| specforge-128k:latest | 128K | No | Fast | Works (clean YAML) | Fails tools (HTTP 400) | Spec-only |
+| qwen3.5-9b-code:128k | 128K | Yes | Slow | Works | Times out at 600s | Too slow |
+| **qwen3.5-4b-128k** | **128K** | **Yes** | **Fast** | **Works (clean YAML)** | **Connects but doesn't execute** | **Needs prompt fix** |
+| qwen3.5:0.8b | 2048 | TBD | Very fast | Untested | Context too small | N/A |
+
+**Current recommendation:** Use single-model `qwen3.5-4b-128k` via the custom proxy at `localhost:20128` (provider `custom`). The split-model approach adds complexity without benefit until the executor prompt is fixed.
+
+### Known Executor Limitation
+
+The Hermes executor currently **connects but does not execute commands**. The model (qwen3.5-4b-128k) calls `clarify` or `skill_view` instead of writing files. This is a prompt engineering issue in `execute_with_hermes()` — the `write_file <path>` placeholder is not interpreted as "generate the content yourself." Fix pending.
+
+---
+
+## For more information
+
+- [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md) — sprint breakdown, model experiments, decisions, next steps
+- [docs/scoring_spec.md](docs/scoring_spec.md) — runbook scoring specification
+- [MODEL_CARD.md](MODEL_CARD.md) — model card (uploaded to HF Hub)
+- [skills/spec-forge/SKILL.md](skills/spec-forge/SKILL.md) — Spec-Forge skill reference
+- [skills/command-runway-pattern/SKILL.md](skills/command-runway-pattern/SKILL.md) — Command Runway pattern skill
