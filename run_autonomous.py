@@ -89,6 +89,8 @@ def parse_args():
                         help="Print detailed execution output")
     parser.add_argument("--clean", action="store_true", default=False,
                         help="Clean up generated feature code after execution (removes src/<task_id>/)")
+    parser.add_argument("--no-clean", action="store_true", default=False,
+                        help="Do not remove feature code even on failure (for debugging)")
 
     return parser.parse_args()
 
@@ -212,6 +214,8 @@ def main():
 
     if args.clean:
         cmd.append("--clean")
+    if args.no_clean:
+        cmd.append("--no-clean")
 
     # Execute the pipeline
     try:
