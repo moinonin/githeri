@@ -1,8 +1,20 @@
-.PHONY: generate check clean validate validate-one plan spec test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
+.PHONY: generate check clean validate validate-one plan spec spec-and-plan test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
 
+# Configuration - can be overridden via environment or command line
 N ?= 2
 PYTHON = .venv/bin/python
 OUTPUT = data/training_data.jsonl
+
+# LLM Provider settings (for generate, spec, spec-and-plan)
+PROVIDER ?= ollama
+MODEL ?=
+API_KEY ?=
+BASE_URL ?=
+TEMPERATURE ?= 0.2
+MAX_TOKENS ?= 2048
+
+# Build common provider args for python script
+PROVIDER_ARGS = --provider $(PROVIDER) $(if $(MODEL),--model $(MODEL)) $(if $(API_KEY),--api-key $(API_KEY)) $(if $(BASE_URL),--base-url $(BASE_URL)) $(if $(TEMPERATURE),--temperature $(TEMPERATURE)) $(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS))
 
 # -------------------- end-to-end --------------------
 #    make spec "Add a forgot-password endpoint"  →  validated spec + plan prompt
@@ -11,34 +23,36 @@ OUTPUT = data/training_data.jsonl
 #    Requires Ollama running locally (qwen2.5-coder:7b-instruct).
 #    The validated spec is appended to data/training_data.jsonl.
 #    The COMMAND_RUNWAY plan prompt is emitted to stdout.
-
+#
 # Generate a single validated spec from a fresh natural-language prompt.
 # Usage: make spec PROMPT="Add a POST /register endpoint that accepts email and password"
 # Alternative: echo "prompt here" > /tmp/prompt.txt && make spec PROMPT_FILE=/tmp/prompt.txt
+# With provider: make spec PROMPT="..." PROVIDER=nvidia API_KEY=$$NVIDIA_API_KEY
 spec:
-	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec PROMPT="<your feature request>" OR make spec PROMPT_FILE=/path/to/prompt.txt'; exit 2; fi
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec PROMPT="<your feature request>" OR make spec PROMPT_FILE=/path/to/prompt.txt [PROVIDER=ollama|nvidia|openai|anthropic|openai-compat]'; exit 2; fi
 	@if [ -n "$(PROMPT_FILE)" ]; then \
 		PROMPT="$$(cat $(PROMPT_FILE))"; \
 		echo "🚀 Processing fresh prompt from file → validated spec…"; \
-		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT" $(PROVIDER_ARGS); \
 	else \
 		echo "🚀 Processing fresh prompt → validated spec…"; \
-		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)" $(PROVIDER_ARGS); \
 	fi
 
 # End-to-end: spec the feature THEN emit the plan prompt for it.
 # Requires Python 3.10+ for the walrus operator (used inline below).
 # Usage: make spec-and-plan PROMPT="Add a PATCH endpoint to update user displayName"
 # Alternative: echo "prompt" > /tmp/prompt.txt && make spec-and-plan PROMPT_FILE=/tmp/prompt.txt
+# With provider: make spec-and-plan PROMPT="..." PROVIDER=nvidia API_KEY=$$NVIDIA_API_KEY
 spec-and-plan:
-	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec-and-plan PROMPT="<your feature request>" OR make spec-and-plan PROMPT_FILE=/path/to/prompt.txt'; exit 2; fi
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make spec-and-plan PROMPT="<your feature request>" OR make spec-and-plan PROMPT_FILE=/path/to/prompt.txt [PROVIDER=ollama|nvidia|openai|anthropic|openai-compat]'; exit 2; fi
 	@if [ -n "$(PROMPT_FILE)" ]; then \
 		PROMPT="$$(cat $(PROMPT_FILE))"; \
 		echo "🚀 End-to-end: fresh prompt → validated spec → plan prompt"; \
-		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$$PROMPT" $(PROVIDER_ARGS); \
 	else \
 		echo "🚀 End-to-end: fresh prompt → validated spec → plan prompt"; \
-		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)"; \
+		$(PYTHON) scripts/run_pipeline.py --prompt "$(PROMPT)" $(PROVIDER_ARGS); \
 	fi
 	@echo ""
 	@echo "📐 Emitting plan prompt for the freshly-generated spec…"
@@ -56,8 +70,8 @@ open('/tmp/_githeri_last_spec.yaml','w').write(pair['spec_yaml'])"
 #    make test            →  run the validator + plan test suite
 
 generate:
-	@echo "🚀 Generating $(N) prompt–spec pairs…"
-	$(PYTHON) scripts/run_pipeline.py $(N)
+	@echo "🚀 Generating $(N) prompt–spec pairs… [provider=$(PROVIDER)]"
+	$(PYTHON) scripts/run_pipeline.py --batch $(N) $(PROVIDER_ARGS)
 
 i ?= 1
 check:

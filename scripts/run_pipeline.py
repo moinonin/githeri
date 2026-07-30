@@ -15,7 +15,7 @@ PROVIDER = "ollama"
 
 # Ollama
 OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "specforge-128k:latest"
+OLLAMA_MODEL = "qwen2.5-coder:7b-nr-instruct"
 
 # OpenAI / OpenAI-compatible (NVIDIA NIM, Together, Fireworks, etc.)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
