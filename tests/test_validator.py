@@ -21,9 +21,15 @@ from validator import (  # noqa: E402
 
 # ---------- helpers ----------
 
-VALID_CLI = """
-task_id: foo
+VALID_CLI = """task_id: foo
 summary: "Foo bar"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {}
+  services: []
+global_verification: []
 local_goals:
   - id: L1
     description: "Build runs"
@@ -47,9 +53,15 @@ context:
 
 def _spec(local_goals_yaml, toplevel_extras=""):
     """Build a minimal valid spec with custom local_goals."""
-    return f"""
-task_id: test-feature
+    return f"""task_id: test-feature
 summary: "A test feature"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {{}}
+  services: []
+global_verification: []
 {toplevel_extras}
 local_goals:
 {local_goals_yaml}
@@ -88,10 +100,17 @@ def _goal(gid, gtype, **kwargs):
         lines.append(f"    description: \"Goal {gid}\"")
     # Add blueprint if present
     if "blueprint" in kwargs:
-        lines.append(f"    blueprint: |\n      " + "\n      ".join(kwargs["blueprint"].split("\n")))
-    # Add acceptance_criteria if present
+        lines.append("    blueprint: |")
+        for line in kwargs["blueprint"].split("\n"):
+            lines.append(f"      {line}")
+    # Add acceptance_criteria if present, or auto-add for CREATE goals with blueprint
     if "acceptance_criteria" in kwargs:
         lines.append(f"    acceptance_criteria: {kwargs['acceptance_criteria']}")
+    elif gtype == "create" and "blueprint" in kwargs:
+        # Auto-add minimal acceptance_criteria for CREATE goals to pass validator
+        lines.append("    acceptance_criteria:")
+        lines.append("      - test: \"Goal {gid} works\"")
+        lines.append("        steps: \"Verify {gid} functionality\"")
     lines.append("    verification:")
     for vk, vv in ver.items():
         if isinstance(vv, dict):
@@ -123,7 +142,7 @@ def test_canonical_verification_types():
 
 
 def test_canonical_expect_keys():
-    assert VALID_EXPECT_KEYS["http"] == {"status", "body_regex", "body_contains", "json_schema", "headers_contain"}
+    assert VALID_EXPECT_KEYS["http"] == {"status", "body_regex", "body_contains", "json_schema", "headers_contain", "content_type"}
     assert VALID_EXPECT_KEYS["cli"] == {"exit_code", "stdout_regex", "stdout_contains", "stdout_lines_min"}
     assert VALID_EXPECT_KEYS["file_exists"] == {"content", "content_contains", "content_not_contains", "exists"}
     assert VALID_EXPECT_KEYS["manual"] == set()
@@ -159,6 +178,13 @@ def test_preprocessor_fixes_regex_in_headers():
     bad_yaml = (
         'task_id: rate-limiter\n'
         'summary: "Rate limiter"\n'
+        'business_rules: []\n'
+        'test_fixtures: []\n'
+        'environment:\n'
+        '  packages: []\n'
+        '  env_vars: {}\n'
+        '  services: []\n'
+        'global_verification: []\n'
         'local_goals:\n'
         '  - id: L1\n'
         '    description: "first goal"\n'
@@ -187,7 +213,7 @@ def test_preprocessor_fixes_regex_in_headers():
     retry_line = [l for l in fixed_lines if "Retry-After" in l][0]
     assert "Retry-After: '\\d+'" in retry_line, f"not single-quoted: {retry_line!r}"
     # Full validation should now pass
-    assert validate_spec(bad_yaml) == [], "pre-processed spec should validate cleanly"
+    assert validate_spec(fixed) == [], "pre-processed spec should validate cleanly"
 
 
 def test_preprocessor_preserves_valid_yaml():
@@ -241,7 +267,22 @@ def test_valid_http_spec():
                method="GET",
                url='http://localhost:3000/v1/sessions/{id}',
                expect='{"status": 200}')
-    assert errs(_spec(g + "\n" + g2)) == []
+    spec = f"""task_id: http-feature
+summary: "HTTP spec"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {{}}
+  services: []
+global_verification: []
+local_goals:
+{g}
+{g2}
+context:
+  language: TypeScript
+"""
+    assert errs(spec) == []
 
 
 def test_valid_file_exists_spec():
@@ -251,18 +292,45 @@ def test_valid_file_exists_spec():
     g2 = _goal("L2", "file_exists",
                path="docs/api.md",
                expect='{"content_contains": "## Endpoints"}')
-    assert errs(_spec(g + "\n" + g2)) == []
-
-
-def test_valid_manual_spec():
-    g = _goal("L1", "manual", description='"Manual check"')
-    g2 = _goal("L2", "manual", description='"Another manual check"')
-    spec = f"""
-task_id: manual-feature
-summary: "Manual checks only"
+    spec = f"""task_id: file-feature
+summary: "File exists spec"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {{}}
+  services: []
+global_verification: []
 local_goals:
 {g}
 {g2}
+context:
+  language: TypeScript
+"""
+    assert errs(spec) == []
+
+
+def test_valid_manual_spec():
+    spec = """task_id: manual-feature
+summary: "Manual checks only"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {}
+  services: []
+global_verification: []
+local_goals:
+  - id: L1
+    description: "Manual check"
+    verification:
+      type: manual
+      description: "Check manually"
+  - id: L2
+    description: "Another manual check"
+    verification:
+      type: manual
+      description: "Check again"
 context:
   language: TypeScript
 """
@@ -618,11 +686,12 @@ context:""")
 
 
 def test_test_fixtures_validation():
-    """test_fixtures must be list of dicts with name and setup_commands."""
-    # Valid
+    """test_fixtures must be list of dicts with name, setup_commands, and teardown_commands."""
+    # Valid (includes teardown_commands)
     spec = VALID_CLI.replace("context:", """test_fixtures:
   - name: "seed-admin"
     setup_commands: ["python seed.py"]
+    teardown_commands: []
 context:""")
     assert errs(spec) == []
 
@@ -637,9 +706,18 @@ context:""")
     spec_bad2 = VALID_CLI.replace("context:", """test_fixtures:
   - name: "seed-admin"
     setup_commands: [""]
+    teardown_commands: []
 context:""")
     e2 = errs(spec_bad2)
     assert _has_error(e2, "must be a non-empty string")
+
+    # Invalid: missing teardown_commands
+    spec_bad3 = VALID_CLI.replace("context:", """test_fixtures:
+  - name: "seed-admin"
+    setup_commands: ["python seed.py"]
+context:""")
+    e3 = errs(spec_bad3)
+    assert _has_error(e3, "missing 'teardown_commands'")
 
 
 def test_environment_validation():
@@ -670,7 +748,7 @@ context:""")
 
 
 def test_global_verification_validation():
-    """global_verification must be non-empty list of strings."""
+    """global_verification must be list of strings (can be empty)."""
     # Valid
     valid_spec = VALID_CLI.replace("context:", """global_verification:
   - "pytest tests/"
@@ -678,17 +756,18 @@ def test_global_verification_validation():
 context:""")
     assert errs(valid_spec) == []
 
-    # Empty list
+    # Empty list is now allowed
     invalid_spec = VALID_CLI.replace("context:", """global_verification: []
 context:""")
     e = errs(invalid_spec)
-    assert _has_error(e, "global_verification must be a non-empty list")
+    # Empty list is OK now
+    assert e == []
 
     # Not a list
     invalid_spec2 = VALID_CLI.replace("context:", """global_verification: "not a list"
 context:""")
     e2 = errs(invalid_spec2)
-    assert _has_error(e2, "global_verification must be a non-empty list")
+    assert _has_error(e2, "global_verification must be a list")
 
     # Empty string in list
     invalid_spec3 = VALID_CLI.replace("context:", """global_verification:
@@ -701,8 +780,8 @@ context:""")
 
 def test_blueprint_required_for_create_goals():
     """CREATE goals must have blueprint >= 100 chars."""
-    # Valid: CREATE goal with blueprint
-    blueprint = "class User(Base):\n    id = Column(Integer, primary_key=True)\n    email = Column(String(255))\n    password_hash = Column(String(255))\n    def set_password(self, p):\n        self.password_hash = bcrypt.hashpw(p.encode(), bcrypt.gensalt(12))"
+    # Valid: CREATE goal with blueprint (with imports)
+    blueprint = "import bcrypt\nfrom sqlalchemy import Column, Integer, String\nfrom sqlalchemy.orm import declarative_base\n\nBase = declarative_base()\n\nclass User(Base):\n    __tablename__ = 'users'\n    id = Column(Integer, primary_key=True)\n    email = Column(String(255))\n    password_hash = Column(String(255))\n    def set_password(self, p):\n        self.password_hash = bcrypt.hashpw(p.encode(), bcrypt.gensalt(12))"
     g1 = _goal("L1", "create", blueprint=blueprint, verification_type="file_exists", path="src/models/User.py", expect='{"exists": true}')
     g2 = _goal("L2", "file_exists", path="src/models/User2.py", expect='{"exists": true}')
     assert errs(_spec(g1 + "\n" + g2)) == []

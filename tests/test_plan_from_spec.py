@@ -30,6 +30,13 @@ def _run(args):
 VALID_YAML = """\
 task_id: test-feature
 summary: "A test feature"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {}
+  services: []
+global_verification: []
 local_goals:
   - id: L1
     description: "Build runs"
@@ -50,8 +57,15 @@ context:
 """
 
 INVALID_YAML = """\
-task_id: "" 
+task_id: ""
 summary: "A bad spec"
+business_rules: []
+test_fixtures: []
+environment:
+  packages: []
+  env_vars: {}
+  services: []
+global_verification: []
 local_goals:
   - id: L1
     description: "only one goal"

@@ -1,4 +1,4 @@
-.PHONY: generate check clean validate validate-one plan spec spec-and-plan test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
+.PHONY: generate generate-random generate-all check clean validate validate-one plan spec spec-and-plan test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
 
 # Configuration - can be overridden via environment or command line
 N ?= 2
@@ -11,10 +11,11 @@ MODEL ?=
 API_KEY ?=
 BASE_URL ?=
 TEMPERATURE ?= 0.2
-MAX_TOKENS ?= 2048
+MAX_TOKENS ?= 4096
+TIMEOUT ?= 300
 
 # Build common provider args for python script
-PROVIDER_ARGS = --provider $(PROVIDER) $(if $(MODEL),--model $(MODEL)) $(if $(API_KEY),--api-key $(API_KEY)) $(if $(BASE_URL),--base-url $(BASE_URL)) $(if $(TEMPERATURE),--temperature $(TEMPERATURE)) $(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS))
+PROVIDER_ARGS = --provider $(PROVIDER) $(if $(MODEL),--model $(MODEL)) $(if $(API_KEY),--api-key $(API_KEY)) $(if $(BASE_URL),--base-url $(BASE_URL)) $(if $(TEMPERATURE),--temperature $(TEMPERATURE)) $(if $(MAX_TOKENS),--max-tokens $(MAX_TOKENS)) $(if $(TIMEOUT),--timeout $(TIMEOUT))
 
 # -------------------- end-to-end --------------------
 #    make spec "Add a forgot-password endpoint"  →  validated spec + plan prompt
@@ -64,19 +65,40 @@ open('/tmp/_githeri_last_spec.yaml','w').write(pair['spec_yaml'])"
 	@rm -f /tmp/_githeri_last_spec.yaml
 
 # -------------------- full pipeline --------------------
-#    make generate N=10   →  produce validated spec pairs
-#    make validate        →  validate all pairs (or one with SPEC=)
-#    make plan SPEC=<p>   →  emit plan prompt for a validated spec
-#    make test            →  run the validator + plan test suite
+#    make generate N=10        → 10 specs (random prompts from seed list)
+#    make generate N=random    → same as N=10, explicit "random" mode
+#    make generate N=all       → ALL seed prompts in order (sequential)
+#    make generate random      → 10 random specs (alias)
+#    make generate all         → ALL seed prompts (alias)
+#    make validate             → validate all pairs (or one with SPEC=)
+#    make plan SPEC=<p>        → emit plan prompt for a validated spec
+#    make test                 → run the validator + plan test suite
 
 generate:
 	@echo "🚀 Generating $(N) prompt–spec pairs… [provider=$(PROVIDER)]"
-	$(PYTHON) scripts/run_pipeline.py --batch $(N) $(PROVIDER_ARGS)
+	@if [ "$(N)" = "all" ]; then \
+		echo "🚀 Generating ALL seed prompts in order..."; \
+		$(PYTHON) -c "import sys; sys.path.insert(0, 'scripts'); from prompt_generator import SEED_PROMPTS; from run_pipeline import generate_batch; generate_batch(len(SEED_PROMPTS))"; \
+	elif [ "$(N)" = "random" ]; then \
+		$(PYTHON) scripts/run_pipeline.py --batch 10 $(PROVIDER_ARGS); \
+	else \
+		$(PYTHON) scripts/run_pipeline.py --batch $(N) $(PROVIDER_ARGS); \
+	fi
+
+# Alias for `make generate N=random` → 10 random specs (good for short test runs)
+generate-random:
+	@echo "🎲 Generating 10 random specs… [provider=$(PROVIDER)]"
+	$(PYTHON) scripts/run_pipeline.py --batch 10 $(PROVIDER_ARGS)
+
+# Alias for `make generate N=all` → all seed prompts in order, sequential
+generate-all:
+	@echo "🚀 Generating ALL seed prompts in order… [provider=$(PROVIDER)]"
+	$(PYTHON) -c "import sys; sys.path.insert(0, 'scripts'); from prompt_generator import SEED_PROMPTS; from run_pipeline import generate_batch; generate_batch(len(SEED_PROMPTS))"
 
 i ?= 1
 check:
-	@echo "📋 Showing first $(i) entry from $(OUTPUT):"
-	@head -$(i) $(OUTPUT) | jq .
+	@echo "📋 Showing the last $(i) entry from $(OUTPUT):"
+	@tail -$(i) $(OUTPUT) | jq .
 
 # Validate every spec in the training corpus (the batch gate)
 validate:
@@ -196,8 +218,12 @@ help:
 	@echo "Usage:"
 	@echo "  make spec PROMPT=\"<text>\"          Generate a validated spec from a fresh NL feature request"
 	@echo "  make spec-and-plan PROMPT=\"<text>\"  End-to-end: fresh prompt → validated spec → plan prompt"
-	@echo "  make generate N=10                  Generate N pairs from seed prompts (default 5)"
-	@echo "  make check                          Pretty-print first pair"
+	@echo "  make generate N=10                  Generate N specs (random prompts from seed list, default N=2)"
+	@echo "  make generate N=random              Same as N=10 (explicit random mode)"
+	@echo "  make generate N=all                 ALL seed prompts in order (sequential)"
+	@echo "  make generate-random                Alias: 10 random specs"
+	@echo "  make generate-all                   Alias: ALL seed prompts in order"
+	@echo "  make check                          Pretty-print last pair"
 	@echo "  make validate                       Validate all pairs against the hardened spec gate"
 	@echo "  make validate-one SPEC=x            Validate a single .yaml spec file"
 	@echo "  make score                          Score all specs against runbook criteria"

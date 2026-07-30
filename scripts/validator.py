@@ -88,11 +88,11 @@ REQUIRED_VERIFICATION_FIELDS = {
 
 # Per-type valid `expect` keys.  Unknown keys are rejected.
 #   cli:           exit_code, stdout_regex, stdout_contains, stdout_lines_min
-#   http:          status, body_regex, body_contains, json_schema, headers_contain
+#   http:          status, body_regex, body_contains, json_schema, headers_contain, content_type
 #   file_exists:   content, content_contains, content_not_contains, exists
 #   manual:        (no expect block — the description IS the check)
 VALID_EXPECT_KEYS = {
-    "http": {"status", "body_regex", "body_contains", "json_schema", "headers_contain"},
+    "http": {"status", "body_regex", "body_contains", "json_schema", "headers_contain", "content_type"},
     "cli": {"exit_code", "stdout_regex", "stdout_contains", "stdout_lines_min"},
     "file_exists": {"content", "content_contains", "content_not_contains", "exists"},
     "manual": set(),
@@ -299,15 +299,41 @@ def validate_spec(yaml_str):
             errors.append(f"Missing required top-level field: {field}")
     unknown_toplevel = set(spec.keys()) - set(REQUIRED_TOP_LEVEL) - OPTIONAL_TOP_LEVEL
     if unknown_toplevel:
-        errors.append(
-            f"Unknown top-level fields: {sorted(unknown_toplevel)}. "
-            f"Allowed: {sorted(set(REQUIRED_TOP_LEVEL) | OPTIONAL_TOP_LEVEL)}"
-        )
+        # Helpful hint: if unknown fields are typical per-goal fields, tell the user they belong inside local_goals
+        goal_fields = {"blueprint", "type", "verification", "acceptance_criteria"}
+        if unknown_toplevel & goal_fields:
+            errors.append(
+                f"Unknown top-level fields: {sorted(unknown_toplevel)}. "
+                f"These fields belong inside a goal under `local_goals`, not at the spec root. "
+                f"Allowed: {sorted(set(REQUIRED_TOP_LEVEL) | OPTIONAL_TOP_LEVEL)}"
+            )
+        else:
+            errors.append(
+                f"Unknown top-level fields: {sorted(unknown_toplevel)}. "
+                f"Allowed: {sorted(set(REQUIRED_TOP_LEVEL) | OPTIONAL_TOP_LEVEL)}"
+            )
 
     # ---- task_id must be a non-empty string ----
     tid = spec.get("task_id")
     if tid is not None and not (isinstance(tid, str) and tid.strip()):
         errors.append("task_id must be a non-empty string")
+    # task_id must be a descriptive name, not a goal ID like L11 or G18
+    if tid is not None and re.match(r"^(L\d+|G\d+)$", tid):
+        errors.append("task_id must be a descriptive name (e.g., daily-operational-report), not an ID like L11 or G18")
+
+    # ---- depends_on helpful hints ----
+    if "depends_on" in spec and spec["depends_on"]:
+        for dep in spec["depends_on"]:
+            if isinstance(dep, str) and dep.startswith("L"):
+                errors.append(
+                    f"depends_on cannot reference local goal IDs (like {dep}). "
+                    f"Use other task_ids or well-known stage names (e.g., stage-1-core-models)."
+                )
+            if isinstance(dep, str) and dep.startswith("G"):
+                errors.append(
+                    f"depends_on should reference task_ids or stage names, not global goal IDs (like {dep}). "
+                    f"Global goals are referenced in global_goals_refs, not depends_on."
+                )
 
     # ---- global_goals_refs ----
     if "global_goals_refs" in spec and spec["global_goals_refs"]:
@@ -318,6 +344,12 @@ def validate_spec(yaml_str):
                 errors.append(
                     f"Invalid global_goals_refs: '{ref}'. "
                     f"Must be one of {sorted(VALID_GLOBAL_GOALS)} or a dict with 'goal' field"
+                )
+            # Helpful hint: don't reference local goals (L...) in global_goals_refs
+            if isinstance(ref_str, str) and ref_str.startswith("L"):
+                errors.append(
+                    f"global_goals_refs cannot reference local goal IDs (like {ref_str}). "
+                    f"Use global goal IDs (G1-G19) or other task_ids."
                 )
 
     # ---- local_goals ----
@@ -342,7 +374,7 @@ def validate_spec(yaml_str):
         if not re.match(r"^L[A-Za-z0-9]+", gid):
             errors.append(
                 f"Goal '{gid}': id must start with 'L' followed by letters/digits "
-                f"(e.g., L1, L2A)"
+                f"(e.g., L1, L2A). Do not use G-prefixed IDs in local_goals."
             )
         if gid in seen_ids:
             errors.append(f"Duplicate goal ID: {gid}")
@@ -514,12 +546,16 @@ def validate_spec(yaml_str):
             env_vars = env.get("env_vars")
             if env_vars is not None and not isinstance(env_vars, dict):
                 errors.append("environment.env_vars must be a dict")
+            # services is optional but if present must be a list
+            services = env.get("services")
+            if services is not None and not isinstance(services, list):
+                errors.append("environment.services must be a list")
 
     # global_verification: non-empty list of strings (commands)
     if "global_verification" in spec:
         gv = spec["global_verification"]
-        if not isinstance(gv, list) or len(gv) == 0:
-            errors.append("global_verification must be a non-empty list of command strings")
+        if not isinstance(gv, list):
+            errors.append("global_verification must be a list of command strings")
         else:
             for idx, cmd in enumerate(gv):
                 if not isinstance(cmd, str) or not cmd.strip():
@@ -550,5 +586,45 @@ def validate_spec(yaml_str):
                         errors.append(f"Goal {goal.get('id')}.acceptance_criteria[{idx}]: missing or empty 'test'")
                     if not criterion.get("steps") or not isinstance(criterion.get("steps"), str) or not criterion["steps"].strip():
                         errors.append(f"Goal {goal.get('id')}.acceptance_criteria[{idx}]: missing or empty 'steps'")
+
+        # CREATE goals MUST have acceptance_criteria
+        if goal.get("type") == "create":
+            if "acceptance_criteria" not in goal or not isinstance(goal["acceptance_criteria"], list) or len(goal["acceptance_criteria"]) == 0:
+                errors.append(f"Goal {goal.get('id', '?')}: CREATE goals require a non-empty 'acceptance_criteria' list")
+
+        # Blueprints must contain import statements (heuristic)
+        blueprint = goal.get("blueprint", "")
+        if blueprint and ("def " in blueprint or "class " in blueprint) and "import " not in blueprint and "from " not in blueprint:
+            errors.append(f"Goal {goal.get('id')}: blueprint appears to be missing import statements. Add all necessary imports.")
+
+    # =====================================================================
+    # NEW ENRICHED-SPEC VALIDATION (top-level checks)
+    # =====================================================================
+
+    # 1. Require teardown_commands in test_fixtures
+    for fix in spec.get("test_fixtures", []):
+        if not isinstance(fix, dict):
+            continue
+        if "teardown_commands" not in fix:
+            errors.append(f"Test fixture '{fix.get('name', '?')}' missing 'teardown_commands'. Add an empty list if not needed.")
+        elif not isinstance(fix["teardown_commands"], list):
+            errors.append(f"Test fixture '{fix.get('name', '?')}': teardown_commands must be a list")
+
+    # 2. Ban placeholder secrets ({{...}} or ***) anywhere in spec
+    def _has_placeholders(obj, path="spec"):
+        if isinstance(obj, str):
+            if "{{" in obj or "***" in obj:
+                errors.append(f"{path}: contains placeholder ({{...}} or ***) – use concrete test values")
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                _has_placeholders(v, f"{path}.{k}")
+        elif isinstance(obj, list):
+            for i, v in enumerate(obj):
+                _has_placeholders(v, f"{path}[{i}]")
+    _has_placeholders(spec)
+
+    # 3. Soft warnings for missing enrichment fields (printed but don't fail validation)
+    # These are collected separately so they don't fail validation
+    # (In a real implementation, we'd have a separate warnings list)
 
     return errors

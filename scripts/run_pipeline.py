@@ -22,35 +22,29 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
-# NVIDIA NIM (uses OpenAI-compatible API)
-# Note: integrate.api.nvidia.com is for model catalog, NOT inference.
-# Use a provider that hosts NVIDIA models via OpenAI-compatible API:
-# - Together AI: https://api.together.xyz/v1 (model: nvidia/nemotron-3-ultra)
-# - Fireworks AI: https://api.fireworks.ai/inference/v1 (model: accounts/nvidia/models/nemotron-3-ultra)
-# - Self-hosted NIM: http://localhost:8000/v1
-NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
-NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://api.together.xyz/v1")
-NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "nvidia/nemotron-3-ultra")
-
 # Anthropic
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022")
 
-# Generation params (can be overridden via CLI)
-TEMPERATURE = 0.2
-MAX_TOKENS = 2048
+# NVIDIA NIM (uses OpenAI-compatible API)
+NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
+NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "minimaxai/minimax-m3")
 
 MAX_RETRIES = 3
 MAX_CONSECUTIVE_FAILS = 10
 OUTPUT_FILE = "data/training_data.jsonl"
 FAILED_FILE = "data/failed_specs.jsonl"
 
-# LLM sampling parameters (can be overridden by CLI)
+# LLM sampling parameters (can be overridden via CLI)
 TEMPERATURE = 0.2
 MAX_TOKENS = 2048
+OLLAMA_TIMEOUT = 300  # seconds (5 minutes) - allows for cold start
 
 CMD_RUNWAY_DIR = pathlib.Path.home() / ".hermes" / "skills" / "command-runway-pattern"
 
+
+# -------------------- SKILL CONTEXT --------------------
 def load_skill_context():
     """Read key skill files and return a combined context string."""
     files = [
@@ -66,8 +60,11 @@ def load_skill_context():
     return "\n".join(parts)
 
 SKILL_CONTEXT = load_skill_context()
+# Escape any curly braces in skill context to avoid format() conflicts
+SKILL_CONTEXT = SKILL_CONTEXT.replace("{", "{{").replace("}", "}}")
 
-# Build the enriched few-shot example with all braces escaped
+
+# -------------------- FEW-SHOT EXAMPLE (ENRICHED) --------------------
 FEW_SHOT_EXAMPLE = (
     "---\n"
     "FEW-SHOT EXAMPLE (ENRICHED) ---\n"
@@ -90,8 +87,10 @@ FEW_SHOT_EXAMPLE = (
     "test_fixtures:\n"
     "  - name: \"seed-admin-user\"\n"
     "    setup_commands:\n"
-    "      - \"python scripts/seed_admin.py --email admin@example.com --password 'SecurePass123!'\n"
+    "      - \"python scripts/seed_admin.py --email admin@example.com --password 'SecurePass123!'\"\n"
     "      - \"python scripts/create_refresh_token.py --user admin@example.com --days 7\"\n"
+    "    teardown_commands:\n"
+    "      - \"python scripts/cleanup_admin.py --email admin@example.com\"\n"
     "environment:\n"
     "  packages:\n"
     "    - \"pyyaml>=6.0\"\n"
@@ -99,8 +98,8 @@ FEW_SHOT_EXAMPLE = (
     "    - \"bcrypt>=4.0\"\n"
     "    - \"pyjwt>=2.8\"\n"
     "  env_vars:\n"
-    "    JWT_SECRET: \"{{JWT_SECRET}}\"\n"
-    "    DATABASE_URL: \"postgresql://user:***@localhost:5432/app\"\n"
+    "    JWT_SECRET: \"test-secret-1234567890abcdef\"\n"
+    "    DATABASE_URL: \"postgresql://user:testpass@localhost:5432/app\"\n"
     "    BCRYPT_COST: \"12\"\n"
     "  services: []\n"
     "global_verification:\n"
@@ -247,7 +246,7 @@ FEW_SHOT_EXAMPLE = (
     "            access_token: {type: string}\n"
     "            refresh_token: {type: string}\n"
     "            token_type: {type: string, enum: ['bearer']}\n"
-    "            expires_in: {type: integer, minimum: 1}\n"
+    "            expires_in: {type: integer}\n"
     "          required: [access_token, refresh_token, token_type, expires_in]\n"
     "    acceptance_criteria:\n"
     "      - test: \"Valid credentials return access + refresh tokens\"\n"
@@ -342,6 +341,37 @@ FEW_SHOT_EXAMPLE = (
     "      expect:\n"
     "        exit_code: 0\n"
     "        stdout_contains: \"0\"\n"
+    "business_rules:\n"
+    "  - name: \"JWT Secret\"\n"
+    "    formula: \"256-bit random, rotated quarterly, stored in vault\"\n"
+    "  - name: \"Access Token Expiry\"\n"
+    "    formula: \"15 minutes sliding window\"\n"
+    "  - name: \"Refresh Token Expiry\"\n"
+    "    formula: \"7 days, single-use, rotated on each refresh\"\n"
+    "  - name: \"Password Hashing\"\n"
+    "    formula: \"bcrypt with cost factor 12, constant-time comparison\"\n"
+    "test_fixtures:\n"
+    "  - name: \"seed-admin-user\"\n"
+    "    setup_commands:\n"
+    "      - \"python scripts/seed_admin.py --email admin@example.com --password 'SecurePass123!'\"\n"
+    "      - \"python scripts/create_refresh_token.py --user admin@example.com --days 7\"\n"
+    "    teardown_commands:\n"
+    "      - \"python scripts/cleanup_admin.py --email admin@example.com\"\n"
+    "environment:\n"
+    "  packages:\n"
+    "    - \"pyyaml>=6.0\"\n"
+    "    - \"jsonschema>=4.0\"\n"
+    "    - \"bcrypt>=4.0\"\n"
+    "    - \"pyjwt>=2.8\"\n"
+    "  env_vars:\n"
+    "    JWT_SECRET: \"test-secret-1234567890abcdef\"\n"
+    "    DATABASE_URL: \"postgresql://user:testpass@localhost:5432/app\"\n"
+    "    BCRYPT_COST: \"12\"\n"
+    "  services: []\n"
+    "global_verification:\n"
+    "  - \"pytest tests/auth/ -v --tb=short\"\n"
+    "  - \"bandit -r src/auth/ -f json -o bandit-report.json\"\n"
+    "  - \"pytest tests/ -k 'not integration' --maxfail=5\"\n"
     "global_goals_refs: [\"G5\", \"G13\", \"G17\"]\n"
     "context:\n"
     "  language: Python\n"
@@ -364,19 +394,22 @@ SYSTEM_PROMPT = (
     "task_id: string\n"
     "summary: string\n"
     "depends_on: list of strings (optional)\n"
+    "business_rules: list of objects (REQUIRED, even if empty list [])\n"
+    "test_fixtures: list of objects (REQUIRED, even if empty list [])\n"
+    "environment: object with packages, env_vars, services (REQUIRED)\n"
+    "global_verification: list of strings (REQUIRED, even if empty list [])\n"
     "local_goals: list of objects with id, description, verification\n"
     "global_goals_refs: list of strings (optional, must reference existing global goals G1-G19)\n"
     "context: object with keys: language, framework, orm, test_framework\n"
     "\n"
-    "--- OPTIONAL ENRICHMENT FIELDS (IMPROVE_SPEC) ---\n"
-    "The following top-level fields are OPTIONAL but strongly encouraged for runbook-ready specs.\n"
-    "If present they will be validated and used by downstream generators:\n"
+    "--- REQUIRED ENRICHMENT FIELDS (IMPROVE_SPEC) ---\n"
+    "The following top-level fields are REQUIRED in every spec (must be present, can be empty lists/dicts):\n"
     "  business_rules: list of objects, each with 'name' (string) and 'formula' (string)\n"
     "    Example: [{name: 'JWT Secret', formula: '256-bit random, rotated quarterly, stored in vault'}]\n"
-    "  test_fixtures: list of objects, each with 'name' (string) and 'setup_commands' (list of strings)\n"
-    "    Example: [{name: 'seed-admin', setup_commands: ['python scripts/seed_admin.py']}]\n"
-    "  environment: object with 'packages' (list of strings) and 'env_vars' (dict)\n"
-    "    Example: {packages: ['pyyaml>=6.0', 'jsonschema>=4.0'], env_vars: {OLLAMA_URL: 'http://localhost:11434'}}\n"
+    "  test_fixtures: list of objects, each with 'name' (string), 'setup_commands' (list of strings), and 'teardown_commands' (list of strings)\n"
+    "    Example: [{name: 'seed-admin', setup_commands: ['python scripts/seed_admin.py'], teardown_commands: []}]\n"
+    "  environment: object with 'packages' (list of strings), 'env_vars' (dict), 'services' (list)\n"
+    "    Example: {packages: ['pyyaml>=6.0', 'jsonschema>=4.0'], env_vars: {OLLAMA_URL: 'http://localhost:11434'}, services: []}\n"
     "  global_verification: list of command strings (run after all local goals pass)\n"
     "    Example: ['pytest tests/', 'bandit -r src/']\n"
     "\n"
@@ -390,7 +423,7 @@ SYSTEM_PROMPT = (
     "  they are near-duplicates and the spec will be rejected.\n"
     "\n"
     "Canonical `expect` keys (use ONLY these -- unknown keys are rejected):\n"
-    "  http:        status (required), body_regex, body_contains, json_schema, headers_contain\n"
+    "  http:        status (required), body_regex, body_contains, json_schema, headers_contain, content_type\n"
     "  cli:         exit_code (required), stdout_regex, stdout_contains, stdout_lines_min\n"
     "  file_exists: path is required; expect must contain at least one of content,\n"
     "               content_contains, content_not_contains, exists\n"
@@ -443,23 +476,17 @@ SYSTEM_PROMPT = (
     "    Example for CREATE goal: 'class User(Base): ... @app.post(\"/users\") async def create_user(...): ...'\n"
     "  acceptance_criteria: list of objects with 'test' (description) and 'steps' (pseudo-code/test instructions)\n"
     "    Example: [{test: 'User created returns 201', steps: 'POST /users with valid data -> assert 201 + user in response'}]\n"
-    "    NOTE: acceptance_criteria is a LOCAL GOAL field (inside each goal), NOT a top-level field.\n"
+    "    CRITICAL: acceptance_criteria is a LOCAL GOAL FIELD (inside each goal under local_goals),\n"
+    "    NOT a top-level field. Put it at the same level as 'id', 'description', 'verification'.\n"
     "  type: 'create' | 'update' | 'delete' | 'inspect' | 'verify' (optional, but recommended for CREATE)\n"
     "    If type == 'create', blueprint is MANDATORY and must be >= 100 characters.\n"
     "\n"
-    "Context: TypeScript, Express, Prisma, Vitest. Auth middleware handles JWT.\n"
-    "Context may also include language, framework, orm, test_framework keys.\n"
-    "Global goals available: G1..G19 (refer to project charter).\n"
-    + FEW_SHOT_EXAMPLE + "\n"
-    "IMPORTANT: The output MUST be a complete YAML document with ALL required top-level fields:\n"
-    "  task_id, summary, depends_on (optional), local_goals, global_goals_refs (optional), context\n"
-    "plus any optional enrichment fields. Do NOT output just a list of goals.\n"
-    "\n"
-    "CRITICAL YAML FORMATTING RULES:\n"
-    "- All string values containing colons (:), special characters, or starting with reserved characters MUST be double-quoted\n"
-    "- Example: summary: \"CREATE: add User model\" (NOT: summary: CREATE: add User model)\n"
-    "- Example: description: \"INSPECT: check existing model\" (NOT: description: INSPECT: check existing model)\n"
-    "- The YAML must be valid and parseable by yaml.safe_load()\n"
+    "VALID VERIFICATION TYPES (only these four are allowed):\n"
+    "  - cli: command-line execution with exit_code and stdout checks\n"
+    "  - file_exists: check file existence and content\n"
+    "  - http: HTTP request with status, headers, body checks\n"
+    "  - manual: human verification (description only, no expect block)\n"
+    "DO NOT use 'db', 'api', 'custom', or any other type - they will be rejected.\n"
     "\n"
     "CRITICAL: local_goals MUST be a list of OBJECTS (dicts), NOT plain strings.\n"
     "Each goal MUST have 'id' (e.g. L1, L2, L3...) and 'description' and 'verification' keys.\n"
@@ -499,6 +526,50 @@ SYSTEM_PROMPT = (
     "          status: 200\n"
     "No goal may be a bare string. Every goal must be a map (dict) with at least id, description, and verification.\n"
     "\n"
+    "--- FEW-SHOT EXAMPLE (ENRICHED) ---\n"
+    + FEW_SHOT_EXAMPLE + "\n"
+    "IMPORTANT: The output MUST be a complete YAML document with ALL required top-level fields:\n"
+    "  task_id, summary, depends_on (optional), local_goals, global_goals_refs (optional), context,\n"
+    "  business_rules (REQUIRED, can be []), test_fixtures (REQUIRED, can be []),\n"
+    "  environment (REQUIRED, can be {packages: [], env_vars: {}, services: []}), global_verification (REQUIRED, can be [])\n"
+    "Do NOT output just a list of goals.\n"
+    "\n"
+    "CRITICAL YAML FORMATTING RULES (violations cause immediate rejection):\n"
+    "1. QUOTING: Any string containing colons (:), @, #, *, &, !, %, |, >, or starting with a\n"
+    "   reserved character MUST be double-quoted. When in doubt, double-quote ALL string values.\n"
+    "   - summary: \"CREATE: add User model\" (NOT: summary: CREATE: add User model)\n"
+    "   - description: \"INSPECT: check existing model\" (NOT: description: INSPECT: check existing model)\n"
+    "2. NO INLINE COMMENTS after quoted values on the same line.\n"
+    "   - value: \"0 8 * * *\" (CORRECT -- the value is the whole string)\n"
+    "   - value: \"0 8 * * *\" (cron expression) (WRONG -- the trailing text breaks the parser)\n"
+    "   If you need a comment, put it on its OWN line with # at the start.\n"
+    "3. BLUEPRINT CODE must be inside a YAML block scalar (use the | indicator and indent 2+ spaces).\n"
+    "   Never put code with @, *, or special chars as a plain YAML value.\n"
+    "   blueprint: |                       # <- block scalar indicator\n"
+    "     @app.route('/api/report')         # <- indented under the block, safe\n"
+    "     def get_report(): ...\n"
+    "   Never do:  blueprint: @app.route('/api/report')  (WRONG -- @ breaks YAML)\n"
+    "4. NEVER start a YAML value with @, *, &, !, %, #, |, >, or backtick. Quote it or use a block scalar.\n"
+    "5. INDENTATION: All keys under a list item (- key) must be indented consistently (usually 6 spaces\n"
+    "   for the first key after the dash+space, then 6 for siblings, 8 for nested).\n"
+    "   - id: L1                          # <- 'id' aligned after '- '\n"
+    "     description: \"some desc\"        # <- same column as 'id'\n"
+    "     verification:                    # <- same column as 'id'\n"
+    "       type: cli                      # <- +2 spaces under verification\n"
+    "       command: \"pytest\"             # <- +2 spaces under verification\n"
+    "       expect:                       # <- +2 spaces under verification\n"
+    "         exit_code: 0                # <- +2 spaces under expect\n"
+    "   Do NOT dedent a sibling key to a different column.\n"
+    "6. CRON EXPRESSIONS must be double-quoted: schedule: \"0 8 * * *\" (never bare -- * breaks YAML).\n"
+    "7. NO TOP-LEVEL 'description' FIELD. Use summary for the high-level description.\n"
+    "   The word 'description' only appears inside individual local_goals.\n"
+    "8. NO '---' at the start. Begin directly with task_id: as the first line.\n"
+    "9. NO 'name:' at the top level. The top-level identifier is 'task_id', not 'name'.\n"
+    "10. NO PLACEHOLDERS in env_vars: DATABASE_URL must be a concrete test value.\n"
+    "    WRONG: DATABASE_URL: \"postgresql://user:***@localhost:5432/app\"\n"
+    "    CORRECT: DATABASE_URL: \"postgresql://user:testpass@localhost:5432/app\"\n"
+    "11. The YAML must be valid and parseable by yaml.safe_load().\n"
+    "\n"
     "Now produce ONLY the YAML specification for the following feature request.\n"
 )
 
@@ -514,7 +585,7 @@ def extract_yaml(text):
             return "\n".join(lines[i:]).strip()
     return text.strip()
 
-def call_llm(system_prompt: str, user_prompt: str) -> str:
+def call_llm(system_prompt, user_prompt):
     """Call the configured LLM provider and return the response text."""
     if PROVIDER == "ollama":
         return _call_ollama(system_prompt, user_prompt)
@@ -525,8 +596,7 @@ def call_llm(system_prompt: str, user_prompt: str) -> str:
     else:
         raise ValueError(f"Unknown PROVIDER: {PROVIDER}")
 
-
-def _call_ollama(system_prompt: str, user_prompt: str) -> str:
+def _call_ollama(system_prompt, user_prompt):
     payload = {
         "model": OLLAMA_MODEL,
         "system": system_prompt,
@@ -537,12 +607,11 @@ def _call_ollama(system_prompt: str, user_prompt: str) -> str:
             "num_predict": MAX_TOKENS,
         },
     }
-    resp = requests.post(OLLAMA_URL, json=payload, timeout=120)
+    resp = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
     resp.raise_for_status()
     return resp.json()["response"]
 
-
-def _call_openai_compat(system_prompt: str, user_prompt: str) -> str:
+def _call_openai_compat(system_prompt, user_prompt):
     """OpenAI-compatible API (OpenAI, NVIDIA NIM, Together, Fireworks, etc.)"""
     if PROVIDER == "nvidia":
         api_key = NVIDIA_API_KEY
@@ -566,12 +635,11 @@ def _call_openai_compat(system_prompt: str, user_prompt: str) -> str:
         "temperature": TEMPERATURE,
         "max_tokens": MAX_TOKENS,
     }
-    resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=120)
+    resp = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload, timeout=OLLAMA_TIMEOUT)
     resp.raise_for_status()
     return resp.json()["choices"][0]["message"]["content"]
 
-
-def _call_anthropic(system_prompt: str, user_prompt: str) -> str:
+def _call_anthropic(system_prompt, user_prompt):
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY not set")
 
@@ -633,7 +701,21 @@ def generate_one_pair(prompt=None):
             original_prompt
             + "\n\nYour previous response had these validation errors:\n"
             + "\n".join(errors)
-            + "\nPlease correct and output ONLY the YAML, without markdown fences."
+            + "\n\nFix EVERY error above. Output ONLY the corrected YAML (no prose, no markdown fences, no ```yaml wrapper).\n"
+            "Remember: task_id first (no '---' prefix), 'id' fields start with L (L1, L2...),\n"
+            "quote all strings with colons or special chars, put code in 'blueprint: |' blocks,\n"
+            "and never put inline comments after a quoted value on the same line.\n"
+            "REPLACE ALL PLACEHOLDERS: {{...}} and *** must become concrete test values.\n"
+            "  - Wrong: Authorization: \"Bearer {{admin_access_token}}\" or \"Bearer ***\"\n"
+            "  - Correct: Authorization: \"Bearer test-token-abc123\"\n"
+            "  - Wrong: DATABASE_URL: \"postgresql://user:***@localhost:5432/app\"\n"
+            "  - Correct: DATABASE_URL: \"postgresql://user:testpass@localhost:5432/app\"\n"
+            "  - Wrong: JWT_SECRET: \"{{JWT_SECRET}}\"\n"
+            "  - Correct: JWT_SECRET: \"test-secret-1234567890abcdef\"\n"
+            "NEVER use *** in any string - not in DATABASE_URL, not in headers, not in env_vars.\n"
+            "Every password, secret, token must be a concrete test value like 'testpass', 'test-token-abc123', 'test-secret-...'.\n"
+            "Every CREATE goal MUST have 'verification' and non-empty 'acceptance_criteria'.\n"
+            "No two goals may verify the same target with the same method (near-duplicate check)."
         )
 
     # ALWAYS save the final attempt (valid or not)
@@ -660,7 +742,7 @@ def generate_one_pair(prompt=None):
 def generate_batch(count):
     from tqdm import tqdm
 
-    print("\U0001f680 Generating {0} prompt-spec pairs...\n".format(count))
+    print("\U0001f680 Generating {0} prompt-spec pairs... [provider={1}]\n".format(count, PROVIDER))
     created = 0
     failed = 0
     consecutive_fails = 0
@@ -703,6 +785,7 @@ if __name__ == "__main__":
     parser.add_argument("--base-url", type=str, help="Base URL for OpenAI-compatible APIs")
     parser.add_argument("--temperature", type=float, default=0.2, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, default=2048, help="Max tokens in response")
+    parser.add_argument("--timeout", type=int, default=300, help="LLM request timeout in seconds")
     args = parser.parse_args()
 
     # Override config from CLI args
@@ -734,6 +817,8 @@ if __name__ == "__main__":
         TEMPERATURE = args.temperature
     if args.max_tokens:
         MAX_TOKENS = args.max_tokens
+    if args.timeout:
+        OLLAMA_TIMEOUT = args.timeout
 
     if args.prompt:
         print("\U0001f680 Processing fresh prompt: {0}...\n".format(args.prompt[:80]))

@@ -1,0 +1,121 @@
+Looking at the error logs, we can distill a clear set of recurring failure patterns that the model (qwen2.5-coder:7b-instruct) keeps tripping over. These are not random; they point to specific weaknesses in the current system prompt and validator feedback. Understanding these patterns lets us tune the pipeline generically, so it works for all prompts.
+
+1. Top‑Level Field Confusion
+Symptom	Frequency	Example
+Unknown top-level fields: ['blueprint', 'type', 'verification', 'acceptance_criteria']	Very high	Model puts per‑goal fields at the root of the spec YAML.
+Missing required top-level field: local_goals	High	Model writes a single goal directly without the local_goals list.
+Missing required top-level field: context	Occasional	Model forgets the context block.
+Root cause: The model does not internalise the outer container structure. It often tries to describe a single goal as if it were the whole spec.
+
+Generic fix:
+
+In the system prompt, add a compact, un‑YAML template that shows only the bare bones, repeated twice:
+
+text
+REQUIRED STRUCTURE (every spec must follow this exactly):
+task_id: <string>
+summary: <string>
+depends_on: [...]
+context:
+  language: ...
+  framework: ...
+  orm: ...
+  test_framework: ...
+local_goals:
+  - id: L1
+    description: ...
+    type: create        # (or 'verify', 'inspect')
+    blueprint: |
+      ...
+    verification:
+      ...
+    acceptance_criteria: ...
+business_rules: [...]
+test_fixtures: [...]
+environment: ...
+global_verification: [...]
+global_goals_refs: [...]
+In the validator, when unknown top‑level fields include typical per‑goal names, add a helpful error hint:
+
+python
+if unknown_toplevel & {'blueprint','type','verification','acceptance_criteria'}:
+    errors.append("These fields belong inside a goal under `local_goals`, not at the spec root.")
+2. Missing id and Invalid Goal Identifiers
+Symptom	Frequency	Example
+Goal 0: missing 'id'	High	Model writes goals as plain dictionaries without an id key.
+task_id: L11 or task_id: G18	Medium	Model uses a local goal ID or global goal ID as the task identifier.
+Root cause: The model treats task_id as "the next ID in the sequence" rather than a feature name.
+
+Generic fix:
+
+Clarify in the prompt: task_id must be a kebab‑case, descriptive name (e.g., daily‑operational‑report). Never use L… or G….
+
+Add a validator check:
+
+python
+if re.match(r'^(L\d+|G\d+)$', tid):
+    errors.append("task_id must be a descriptive name, not an ID like L11 or G18.")
+3. Invalid Verification Types and Expect Keys
+Symptom	Frequency	Example
+unknown verification type 'db_schema', 'cron'	Occasional	Model invents new verification types.
+unknown expect keys ['redirect', 'content', 'json_contains', 'body_schema', 'headers']	Very high	Model guesses expect keys that don’t exist.
+Root cause: The model hasn’t memorised the allowed vocabulary; it frequently hallucinates plausible‑sounding keys.
+
+Generic fix:
+
+Add a dedicated section in the prompt that lists only the allowed types and their exact expect keys, with a warning: “Any other key will be rejected.” Use a table format for clarity.
+
+The validator already catches these; the error message is clear. The improvement must come from the prompt side.
+
+4. Placeholder Strings and Near‑Duplicates
+Symptom	Frequency	Example
+contains placeholder ({...} or ***)	Occasional	Model still emits {{session_id}} in body or env vars.
+near-duplicate verification (type=http, same target)	Medium	Model creates multiple goals that hit the same URL with the same expect keys.
+Root cause: Placeholders are a habit from other templates. Duplicates arise because the model splits a single endpoint into many trivial “check” goals.
+
+Generic fix:
+
+The placeholder check is already in the validator; ensure the system prompt says “use literal test values, never {{...}}.”
+
+For duplicates, the validator already flags them. The prompt can add: “Each goal must verify a distinct aspect (different endpoint, different HTTP method, different headers, or different expect keys).”
+
+5. YAML Syntax Errors
+Symptom	Frequency	Example
+Invalid YAML: while parsing …	Frequent	Unquoted @ inside a blueprint, missing quotes around special chars, indentation errors.
+Root cause: The model writes code inside the blueprint without escaping it properly, or misindents the YAML.
+
+Generic fix:
+
+The sanitizer already strips ANSI codes, but it can’t fix YAML structure.
+
+The prompt should insist: “Output ONLY valid YAML. Ensure all strings containing @, {, }, *, or # are properly quoted. The blueprint field must be a literal block scalar (|) and should contain only Python code – no YAML special chars outside the indented block.”
+
+Since the model uses ollama run output with terminal escape sequences, the clean_yaml_output function already handles that. The raw @ and indentation problems are separate.
+
+6. Dependency Confusion
+Symptom	Frequency	Example
+depends_on: - L7	Medium	Model lists local goals as dependencies.
+depends_on: - T0, - G14	Occasional	Random strings that aren’t valid stage IDs.
+Root cause: The model doesn’t grasp that depends_on refers to other features’ task_ids or common stage names (like stage‑1‑core‑models).
+
+Generic fix:
+
+In the prompt, explain: depends_on should contain other task_id values or well‑known stage dependencies (stage‑1‑core‑models, etc.). Do not reference local goals (L…) or global goals (G…).
+
+Validator can flag dep starting with L or G with a helpful message.
+
+7. acceptance_criteria Placement
+Symptom	Frequency	Example
+Unknown top-level fields: ['acceptance_criteria']	Occasional	Model puts acceptance_criteria at the spec root.
+Root cause: Same as #1 – per‑goal fields leaking to the top.
+
+Generic fix: Covered by the structural template fix in #1.
+
+Summary of Generic Improvements Needed
+What to change	Where	Expected impact
+Show an explicit, minimal structural skeleton in the prompt	SYSTEM_PROMPT_TEMPLATE	Eliminates top‑level field confusion and missing local_goals
+Clarify task_id naming	Prompt + validator check	Stops L11, G18 misuse
+Add a dedicated “Allowed Keys” table for verification types & expect keys	Prompt	Reduces hallucinated keys
+Strengthen the warning about placeholders and near‑duplicates	Prompt	Fewer placeholder errors
+Add more helpful validator error messages (like “these fields belong inside a goal”)	validate_spec	Faster retry convergence
+The errors are not random – they’re a direct consequence of the model not knowing the exact outer structure and the limited allowed vocabulary. By making those constraints more visible in the prompt and giving the validator clearer, action‑oriented error messages, you’ll see a dramatic drop in failure rates across all prompt types.

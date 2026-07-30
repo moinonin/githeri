@@ -106,7 +106,7 @@ git clone <repo-url> && cd githeri
 python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 
 # For local generation (Ollama):
-ollama pull qwen3.5-4b-128k
+ollama pull qwen2.5-coder:7b-instruct
 
 # For cloud generation (Together AI - hosts Nemotron 3 Ultra):
 export NVIDIA_API_KEY=your_together_ai_key
@@ -127,8 +127,17 @@ make spec PROMPT="Add a PATCH /users/{id}/settings endpoint" PROVIDER=nvidia API
 # Use any OpenAI-compatible endpoint
 make spec PROMPT="..." PROVIDER=openai-compat BASE_URL=https://api.fireworks.ai/inference/v1 API_KEY=... MODEL=accounts/nvidia/models/nemotron-3-ultra
 
-# Generate N pairs from seed bank (475 prompts across 21 categories)
+# Generate N specs from random seed prompts (475 prompts across 21 categories)
+make generate N=10
 make generate N=100
+
+# Generate ALL seed prompts in sequential order (full corpus generation)
+make generate N=all
+make generate-all
+
+# Generate 10 random specs (explicit alias, good for short test runs)
+make generate N=random
+make generate-random
 
 # Validate all specs in the corpus
 make validate
@@ -235,7 +244,7 @@ tests/
 ## Prerequisites
 
 - Python 3.11+ (the repo ships a `.venv`; activate or use `.venv/bin/python`)
-- **For local generation**: Ollama running locally with `qwen3.5-4b-128k` (recommended) or `qwen2.5-coder:7b-instruct`
+- **For local generation**: Ollama running locally with `qwen2.5-coder:7b-instruct` (recommended) or `qwen3.5-4b-128k`
 - **For cloud generation**: API key for Together AI (`NVIDIA_API_KEY`), Fireworks, or any OpenAI-compatible endpoint
 - `requirements.txt` deps — install via `pip install -r requirements.txt`
 - **For training**: CUDA GPU with 8GB+ VRAM, Unsloth, trl, peft, bitsandbytes
@@ -249,7 +258,11 @@ tests/
 |--------|-------------|
 | `make spec PROMPT="..."` | Generate a validated spec from a fresh NL prompt |
 | `make spec-and-plan PROMPT="..."` | End-to-end: NL → validated spec → plan prompt |
-| `make generate N=10` | Generate N pairs from seed bank |
+| `make generate N=10` | Generate N random specs from seed bank (default N=2) |
+| `make generate N=random` | Same as N=10, explicit random mode |
+| `make generate N=all` | ALL 475 seed prompts in sequential order |
+| `make generate-random` | Alias: 10 random specs (good for short test runs) |
+| `make generate-all` | Alias: ALL seed prompts in order |
 | `make check` | Pretty-print first corpus entry |
 | `make validate` | Validate all specs in corpus |
 | `make validate-one SPEC=path.yaml` | Validate single spec file |
@@ -324,18 +337,41 @@ make autonomous-cycle SPEC=specs/test-endpoint.yaml
 
 ---
 
-## Recent Enhancements (2026-07-30)
+## Recent Enhancements
 
-### Spec Enrichment (IMPROVE_SPEC)
+### 2026-07-30 (Latest)
+
+#### THIRD_IMPROVE_SPEC — 7 Pipeline Fixes
+After analyzing a 10-spec batch run, identified 7 recurring failure patterns and fixed all of them:
+
+1. **Minimal structural skeleton in SYSTEM_PROMPT** — eliminated top-level field confusion
+2. **task_id validator check** — rejects L11/G18-style IDs, requires descriptive slug like `jwt-auth-login`
+3. **Verification types & expect keys table** — explicit vocabulary reduces hallucinated keys
+4. **Placeholder ban strengthened** — concrete examples in prompt (`JWT_SECRET: "test-secret-..."`, `DATABASE_URL: "postgresql://user:testpass@..."`) + validator hint
+5. **Helpful error hints** — "These fields belong inside a goal under `local_goals`, not at the spec root"
+6. **depends_on validator hints** — rejects L/G refs, redirects to task_ids/stage names
+7. **Structural acceptance_criteria template** — local goal field, not top-level
+
+All 90 tests passing.
+
+#### Generation Mode Aliases
+Added `make generate N=random` and `make generate N=all` flags plus `generate-random` / `generate-all` aliases for short tests and full corpus runs. 475 seed prompts across 21 categories available.
+
+#### Model Default Reverted
+`OLLAMA_MODEL` reverted to `qwen2.5-coder:7b-instruct` (was regressed to `qwen3.5-4b-128k:latest`). Better structure compliance after prompt fixes.
+
+### 2026-07-30 (Earlier)
+
+#### Spec Enrichment (IMPROVE_SPEC)
 Added five top-level enrichment fields (`business_rules`, `test_fixtures`, `environment`, `global_verification`) and three goal-level fields (`blueprint`, `acceptance_criteria`, `type`). All validated and scored.
 
-### Multi-Provider LLM Support
+#### Multi-Provider LLM Support
 `run_pipeline.py` now supports Ollama, OpenAI, Anthropic, NVIDIA (via Together AI), and any OpenAI-compatible endpoint. Configured via `--provider` CLI arg or Makefile variables.
 
-### Runbook Scorer Stage Detection
+#### Runbook Scorer Stage Detection
 Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false "missing stage" penalties for `file_exists` verification on CREATE goals.
 
-### Validator Hardening
+#### Validator Hardening
 - Guarded against `expect` being a string instead of dict (prevents `AttributeError: 'str' object has no attribute 'get'`)
 - Near-duplicate detection now handles malformed `expect` blocks defensively
 - All 90 tests pass
@@ -346,13 +382,13 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 
 | Model | Context | Tools | Speed (M1 16GB) | Spec Gen | Recommended Use |
 |-------|---------|-------|-----------------|----------|-----------------|
-| **qwen3.5-4b-128k** | 128K | Yes | Fast | Works | **Default local (Ollama)** |
-| qwen3.5-9b-code:128k | 128K | Yes | Slow | Works | Higher quality if time allows |
-| qwen2.5-coder:7b-instruct | 32K | Yes | Fast | Works (YAML retry needed) | Legacy |
-| specforge-128k:latest | 128K | No | Fast | Works | Spec-only (no tools) |
-| **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via Together AI (--provider nvidia)** |
+| **qwen2.5-coder:7b-instruct** | 32K | Yes | Fast | Works (best structure compliance) | **Default local (Ollama)** |
+| qwen3.5-4b-128k | 128K | Yes | Fast | Works | Larger context fallback |
+| qwen3.5-9b-code:128k | 128K | Yes | Slow | Excellent | Higher quality if time allows |
+| deepseek-r1:7b | 128K | TBD | Fast | YAML syntax errors | Not recommended for spec gen |
+| **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via Together AI (`--provider nvidia`)** |
 
-**Current recommendation**: Local → `qwen3.5-4b-128k` on Ollama. Cloud → `nvidia/nemotron-3-ultra` via Together AI (`--provider nvidia`).
+**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama. Cloud → `nvidia/nemotron-3-ultra` via Together AI (`--provider nvidia`).
 
 ---
 
@@ -360,7 +396,9 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 
 - [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md) — sprint breakdown, model experiments, decisions, next steps
 - [docs/scoring_spec.md](docs/scoring_spec.md) — runbook scoring specification
-- [docs/IMPROVE_SPEC.md](docs/IMPROVE_SPEC.md) — spec enrichment field specification
+- [docs/IMPROVE_SPEC.md](docs/IMPROVE_SPEC.md) — spec enrichment field specification (v1)
+- [docs/SECOND_IMPROVE_SPEC.md](docs/SECOND_IMPROVE_SPEC.md) — enrichment field enforcement (v2)
+- [docs/THIRD_IMPROVE_SPEC.txt](docs/THIRD_IMPROVE_SPEC.txt) — 7 pipeline failure patterns + fixes (v3)
 - [MODEL_CARD.md](MODEL_CARD.md) — model card (uploaded to HF Hub)
 - [skills/spec-forge/SKILL.md](skills/spec-forge/SKILL.md) — Spec-Forge skill reference
 - [skills/command-runway-pattern/SKILL.md](skills/command-runway-pattern/SKILL.md) — Command Runway pattern skill

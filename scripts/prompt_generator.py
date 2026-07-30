@@ -521,7 +521,18 @@ SEED_PROMPTS = [
     "Implement a POST endpoint to submit a verification haiku. Best haiku wins swag. Community voting. Return 201.",
 ]
 
-def generate_prompt():
-    # Simple: random choice from seed bank
+def generate_prompt(index: int | None = None):
+    """
+    Get a seed prompt.
+    
+    Args:
+        index: If provided, returns the prompt at that index (0-based).
+               If None, returns a random prompt (legacy behavior).
+    """
     import random
+    if index is not None:
+        if 0 <= index < len(SEED_PROMPTS):
+            return SEED_PROMPTS[index]
+        else:
+            raise IndexError(f"Prompt index {index} out of range (0-{len(SEED_PROMPTS)-1})")
     return random.choice(SEED_PROMPTS)

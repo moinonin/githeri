@@ -4,6 +4,42 @@ Tracking model/executor experiments and decisions for the command-runway-autonom
 
 ---
 
+## Summary (2026-07-30)
+
+**THIRD_IMPROVE_SPEC**: Pipeline analysis from a 10-spec batch run revealed 7 recurring failure patterns. Implemented all 7 fixes:
+
+1. **Minimal structural skeleton** in SYSTEM_PROMPT — eliminated top-level field confusion
+2. **task_id validator check** — rejects L11/G18-style IDs, requires descriptive slug
+3. **Verification types & expect keys table** — explicit vocabulary reduces hallucinated keys
+4. **Placeholder ban strengthened** — concrete examples in prompt + validator hint
+5. **Helpful error hints** — "These fields belong inside a goal under `local_goals`"
+6. **depends_on validator hints** — rejects L/G refs, redirects to task_ids/stage names
+7. **Structural acceptance criteria template** — local goal field, not top-level
+
+All 90 tests passing. Complex prompts (scheduled tasks, multi-endpoint features) now consistently produce valid specs with all enrichment fields after 2-3 retries.
+
+**Prompt-few-shot model matrix** (final, after multiple iterations):
+
+| Model | Default? | Spec Gen Quality | Notes |
+|-------|----------|------------------|-------|
+| **qwen2.5-coder:7b-instruct** | ✅ Yes | Best structure compliance | Default; sometimes misses structure on 1st attempt, retries fix it |
+| qwen3.5-4b-128k | No (was regressed) | Good | Larger context; was default until model regression discovered |
+| qwen3.5-9b-code:128k | No | Excellent | Times out at 600s on M1 — too slow for batch runs |
+| deepseek-r1:7b | No | Excellent structure understanding | YAML syntax errors (inline comments after quotes, @ in plain values, indentation) |
+| **Nemotron 3 Ultra** | Cloud | Excellent | Via Together AI (`--provider nvidia`), best quality when API key available |
+
+**Generation mode matrix** (Makefile):
+
+| Target | Behavior | Use case |
+|--------|----------|----------|
+| `make generate N=10` | 10 random specs from 475-prompt seed bank | Standard batch runs |
+| `make generate N=random` | Same as N=10, explicit mode | Scripting clarity |
+| `make generate N=all` | All 475 seed prompts in sequential order | Full corpus generation |
+| `make generate-random` | Alias: 10 random specs | Quick test runs |
+| `make generate-all` | Alias: ALL seed prompts in order | Full coverage |
+
+---
+
 ## Summary (2026-07-29)
 
 Tested the full autonomous pipeline (NL prompt → spec → plan → runbook → execute) across multiple model and executor configurations. Spec generation is stable. Hermes executor requires further prompt engineering to drive actual file creation. Scoring expanded to cover spec quality, execution outcomes, and pipeline health.
