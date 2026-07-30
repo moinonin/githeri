@@ -1,6 +1,6 @@
 .PHONY: generate check clean validate validate-one plan spec test help convert-chat train merge eval-model install-skill uninstall-skill score score-failed upload-hf
 
-N ?= 5
+N ?= 2
 PYTHON = .venv/bin/python
 OUTPUT = data/training_data.jsonl
 
@@ -96,9 +96,10 @@ plan:
 	@$(PYTHON) scripts/plan_from_spec.py "$(SPEC)"
 
 # Score all specs in the training corpus
+TH ?= 0.66
 score:
-	@echo "📊 Scoring all specs in $(OUTPUT) against runbook criteria..."
-	@$(PYTHON) scripts/score_corpus.py --file $(OUTPUT)
+	@echo "📊 Scoring all specs in $(OUTPUT) against runbook criteria with threshold $(TH)..."
+	@$(PYTHON) scripts/score_corpus.py --file $(OUTPUT) --threshold $(TH)
 
 # Score failed specs (invalid specs saved separately)
 score-failed:
@@ -107,9 +108,10 @@ score-failed:
 
 # Convert training data to chat format for fine-tuning
 # Usage: make convert-chat [MIN_SCORE=0.75]
+ms ?= $(TH)
 convert-chat:
-	@echo "💬 Converting training data to chat format (min_score=$(MIN_SCORE))..."
-	@$(PYTHON) scripts/convert_to_chat.py --min-score $(MIN_SCORE)
+	@echo "💬 Converting training data to chat format (min_score=$(ms))..."
+	@$(PYTHON) scripts/convert_to_chat.py --min-score $(ms)
 
 # Fine-tuning pipeline targets
 train:

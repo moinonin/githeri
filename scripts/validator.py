@@ -74,7 +74,9 @@ VALID_VERIFICATION_TYPES = {"http", "cli", "file_exists", "manual"}
 VALID_GLOBAL_GOALS = {f"G{i}" for i in range(1, 20)}  # G1..G19
 
 REQUIRED_TOP_LEVEL = ["task_id", "summary", "local_goals", "context"]
-OPTIONAL_TOP_LEVEL = {"depends_on", "global_goals_refs"}
+OPTIONAL_TOP_LEVEL = {"depends_on", "global_goals_refs",
+                      "business_rules", "test_fixtures",
+                      "environment", "global_verification"}
 
 # Per-type required verification fields (besides `type` itself)
 REQUIRED_VERIFICATION_FIELDS = {
@@ -110,6 +112,14 @@ FILE_EXISTS_MIN_ONE = {"content", "content_contains", "content_not_contains", "e
 # Minimum quality thresholds
 MIN_LOCAL_GOALS = 2
 MIN_NONTRIVIAL_CMD_LEN = 3  # reject " ", "a", or empty strings
+
+# Blueprint minimum length for CREATE goals
+MIN_BLUEPRINT_LENGTH = 100
+
+# New optional top-level fields (IMPROVE_SPEC enrichment)
+OPTIONAL_TOP_LEVEL = {"depends_on", "global_goals_refs",
+                      "business_rules", "test_fixtures",
+                      "environment", "global_verification"}
 
 EXPRESSION_PATTERN = re.compile(r'[*+/%]\s*\d+|\d+\s*[*+/%]|def\s+|import\s+|\.\.\.')
 
@@ -155,7 +165,11 @@ def _near_duplicate(a, b):
         # Same path → check if the expectations are also identical
         if a.get("path", "") != b.get("path", ""):
             return False
-        return set(a.get("expect", {}).keys()) == set(b.get("expect", {}).keys())
+        ea = a.get("expect") or {}
+        eb = b.get("expect") or {}
+        if not isinstance(ea, dict) or not isinstance(eb, dict):
+            return False
+        return set(ea.keys()) == set(eb.keys())
     if t == "http":
         # Normalize path-param placeholders for URL comparison
         ua = re.sub(r"\{[^}]+\}", "{}", a.get("url", ""))
@@ -167,7 +181,11 @@ def _near_duplicate(a, b):
         # legitimate distinct check, not padding.
         if a.get("headers", {}) != b.get("headers", {}):
             return False
-        return set(a.get("expect", {}).keys()) == set(b.get("expect", {}).keys())
+        ea = a.get("expect") or {}
+        eb = b.get("expect") or {}
+        if not isinstance(ea, dict) or not isinstance(eb, dict):
+            return False
+        return set(ea.keys()) == set(eb.keys())
     if t == "cli":
         return a.get("command", "") == b.get("command", "")
     return False
@@ -381,7 +399,10 @@ def validate_spec(yaml_str):
             except Exception as e:
                 errors.append(f"Goal {gid}: body is not valid JSON: {e}")
 
-            schema = ver.get("expect", {}).get("json_schema")
+            schema = None
+            expect_for_schema = ver.get("expect", {})
+            if isinstance(expect_for_schema, dict):
+                schema = expect_for_schema.get("json_schema")
             if schema:
                 if _contains_ref(schema):
                     errors.append(
@@ -440,5 +461,94 @@ def validate_spec(yaml_str):
                     f"(type={v_i.get('type')}, same target). "
                     "Each goal should verify a distinct aspect."
                 )
+
+    # ---- New IMPROVE_SPEC enrichment fields validation ----
+    # business_rules: list of dicts with 'name' and 'formula' (non-empty strings)
+    if "business_rules" in spec:
+        rules = spec["business_rules"]
+        if not isinstance(rules, list):
+            errors.append("business_rules must be a list")
+        else:
+            for idx, rule in enumerate(rules):
+                if not isinstance(rule, dict):
+                    errors.append(f"business_rules[{idx}]: must be a dict")
+                    continue
+                if not rule.get("name") or not isinstance(rule.get("name"), str) or not rule["name"].strip():
+                    errors.append(f"business_rules[{idx}]: missing or empty 'name'")
+                if not rule.get("formula") or not isinstance(rule.get("formula"), str) or not rule["formula"].strip():
+                    errors.append(f"business_rules[{idx}]: missing or empty 'formula'")
+
+    # test_fixtures: list of dicts with 'name' and 'setup_commands' (list of strings)
+    if "test_fixtures" in spec:
+        fixtures = spec["test_fixtures"]
+        if not isinstance(fixtures, list):
+            errors.append("test_fixtures must be a list")
+        else:
+            for idx, fix in enumerate(fixtures):
+                if not isinstance(fix, dict):
+                    errors.append(f"test_fixtures[{idx}]: must be a dict")
+                    continue
+                if not fix.get("name") or not isinstance(fix.get("name"), str) or not fix["name"].strip():
+                    errors.append(f"test_fixtures[{idx}]: missing or empty 'name'")
+                setup_cmds = fix.get("setup_commands")
+                if not isinstance(setup_cmds, list):
+                    errors.append(f"test_fixtures[{idx}]: 'setup_commands' must be a list")
+                else:
+                    for cmd_idx, cmd in enumerate(setup_cmds):
+                        if not isinstance(cmd, str) or not cmd.strip():
+                            errors.append(f"test_fixtures[{idx}].setup_commands[{cmd_idx}]: must be a non-empty string")
+
+    # environment: dict with 'packages' (list of strings) and 'env_vars' (dict)
+    if "environment" in spec:
+        env = spec["environment"]
+        if not isinstance(env, dict):
+            errors.append("environment must be a dict")
+        else:
+            packages = env.get("packages")
+            if packages is not None and not isinstance(packages, list):
+                errors.append("environment.packages must be a list of strings")
+            elif packages:
+                for idx, pkg in enumerate(packages):
+                    if not isinstance(pkg, str) or not pkg.strip():
+                        errors.append(f"environment.packages[{idx}]: must be a non-empty string")
+            env_vars = env.get("env_vars")
+            if env_vars is not None and not isinstance(env_vars, dict):
+                errors.append("environment.env_vars must be a dict")
+
+    # global_verification: non-empty list of strings (commands)
+    if "global_verification" in spec:
+        gv = spec["global_verification"]
+        if not isinstance(gv, list) or len(gv) == 0:
+            errors.append("global_verification must be a non-empty list of command strings")
+        else:
+            for idx, cmd in enumerate(gv):
+                if not isinstance(cmd, str) or not cmd.strip():
+                    errors.append(f"global_verification[{idx}]: must be a non-empty string")
+
+    # Blueprint validation for CREATE goals
+    for goal in goals:
+        if not isinstance(goal, dict):
+            continue
+        if goal.get("type") == "create":
+            blueprint = goal.get("blueprint", "")
+            if not blueprint or not isinstance(blueprint, str) or len(blueprint.strip()) < MIN_BLUEPRINT_LENGTH:
+                errors.append(
+                    f"Goal {goal.get('id', '?')}: CREATE goals require a 'blueprint' "
+                    f"with at least {MIN_BLUEPRINT_LENGTH} characters of code outline"
+                )
+        # Acceptance criteria validation (optional but if present must be well-formed)
+        if "acceptance_criteria" in goal:
+            ac = goal["acceptance_criteria"]
+            if not isinstance(ac, list):
+                errors.append(f"Goal {goal.get('id')}: acceptance_criteria must be a list")
+            else:
+                for idx, criterion in enumerate(ac):
+                    if not isinstance(criterion, dict):
+                        errors.append(f"Goal {goal.get('id')}.acceptance_criteria[{idx}]: must be a dict")
+                        continue
+                    if not criterion.get("test") or not isinstance(criterion.get("test"), str) or not criterion["test"].strip():
+                        errors.append(f"Goal {goal.get('id')}.acceptance_criteria[{idx}]: missing or empty 'test'")
+                    if not criterion.get("steps") or not isinstance(criterion.get("steps"), str) or not criterion["steps"].strip():
+                        errors.append(f"Goal {goal.get('id')}.acceptance_criteria[{idx}]: missing or empty 'steps'")
 
     return errors

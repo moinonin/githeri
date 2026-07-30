@@ -30,7 +30,10 @@ context:
 
 def _goal(gid: str, vtype: str, **kwargs) -> str:
     """Build a single goal YAML block."""
+    gtype = kwargs.pop("gtype", None)
     lines = [f"  - id: {gid}", f"    description: 'goal {gid}'"]
+    if gtype:
+        lines.append(f"    type: {gtype}")
     lines.append("    verification:")
     lines.append(f"      type: {vtype}")
     for k, v in kwargs.items():
@@ -188,6 +191,64 @@ def test_runbook_score_penalizes_wrong_order():
     assert score > 0.0, f"Expected non-zero score, got {score}: {details}"
     assert any("inspect goal appears after create goal" in d.lower() for d in details) or \
            any("create goal appears after verify goal" in d.lower() for d in details)
+
+
+def test_check_create_modify_detects_explicit_create_type():
+    """Explicit type: 'create' on a goal should be detected as create/modify,
+    even if verification is file_exists (executor will generate the file)."""
+    g1 = _goal("L1", "file_exists", gtype="create", path='"src/models/User.ts"', expect='{"exists": true}')
+    g2 = _goal("L2", "file_exists", path='"src/x.ts"', expect='{"exists": true}')
+    spec = _spec_from_goals(g1 + "\n" + g2)
+    import yaml
+    spec_dict = yaml.safe_load(spec)
+    assert _check_create_modify(spec_dict["local_goals"]) is True
+
+
+def test_check_inspect_detects_explicit_inspect_type():
+    """Explicit type: 'inspect' should be detected even if verification doesn't match patterns."""
+    g1 = _goal("L1", "cli", gtype="inspect", command='"some custom command"', expect='{"exit_code": 0}')
+    g2 = _goal("L2", "cli", command='"pnpm test"', expect='{"exit_code": 0}')
+    spec = _spec_from_goals(g1 + "\n" + g2)
+    import yaml
+    spec_dict = yaml.safe_load(spec)
+    assert _check_inspect(spec_dict["local_goals"]) is True
+
+
+def test_check_verify_detects_explicit_verify_type():
+    """Explicit type: 'verify' should be detected even if verification doesn't match patterns."""
+    g1 = _goal("L1", "manual", gtype="verify", description='"manual check"')
+    g2 = _goal("L2", "cli", command='"pnpm build"', expect='{"exit_code": 0}')
+    spec = _spec_from_goals(g1 + "\n" + g2)
+    import yaml
+    spec_dict = yaml.safe_load(spec)
+    assert _check_verify(spec_dict["local_goals"]) is True
+
+
+def test_check_verify_detects_file_exists_with_content_check():
+    """file_exists with content_contains should count as verify (asserts content shape)."""
+    g1 = _goal("L1", "file_exists", path='"src/models/User.ts"',
+               expect='{"content_contains": ["password_hash", "bcrypt"]}')
+    g2 = _goal("L2", "cli", command='"pnpm build"', expect='{"exit_code": 0}')
+    spec = _spec_from_goals(g1 + "\n" + g2)
+    import yaml
+    spec_dict = yaml.safe_load(spec)
+    assert _check_verify(spec_dict["local_goals"]) is True
+
+
+def test_runbook_score_create_with_file_exists_passes_hard_gate():
+    """A spec with explicit type: 'create' + file_exists should NOT hit the hard gate.
+    This is the 'Create a User model' pattern: file_exists verifies the file was generated."""
+    g1 = _goal("L1", "file_exists", gtype="create", path='"src/models/User.py"',
+               expect='{"content_contains": ["password_hash", "bcrypt"]}')
+    g2 = _goal("L2", "file_exists", gtype="verify", path='"src/models/User.py"',
+               expect='{"exists": true}')
+    spec = _spec_from_goals(g1 + "\n" + g2)
+    import yaml
+    spec_dict = yaml.safe_load(spec)
+    score, details = runbook_score(spec_dict)
+    # Should NOT hit hard gate because explicit create + verify types are present
+    assert score > 0.0, f"Expected non-zero score, got {score}: {details}"
+    assert not any("HARD GATE" in d for d in details), f"Should not hit hard gate: {details}"
 
 
 def test_runbook_score_verification_testability_http():

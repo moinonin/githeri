@@ -35,8 +35,14 @@ def _check_inspect(goals):
     Inspect = read-only: file_exists verification, or CLI commands that read
     (test -f, head, cat, ls, stat). A file_exists goal IS an inspect, NOT a
     create — it checks that something exists, it doesn't create it.
+
+    Explicitly-typed goals also count: type: 'inspect' or type: 'verify'.
     """
     for g in goals:
+        gtype = g.get("type", "").lower()
+        # Explicit goal type takes precedence
+        if gtype == "inspect":
+            return True
         ver = g.get("verification", {})
         if ver.get("type") == "file_exists":
             return True
@@ -50,11 +56,17 @@ def _check_inspect(goals):
 def _check_create_modify(goals):
     """Check if there's at least one create/modify goal.
 
-    Create/Modify = a CLI build/install/migrate command. file_exists is NOT
-    counted here — it's an inspect, not a mutation. Only true build commands
-    qualify.
+    Create/Modify = a CLI build/install/migrate command, OR an explicitly-typed
+    create goal (type: 'create'), OR a file_exists check on a NEW file path
+    that isn't already in the codebase (best heuristic available without git
+    diff access). Goals with type: 'create' count as create even if they use
+    file_exists verification — the executor will generate the file.
     """
     for g in goals:
+        gtype = g.get("type", "").lower()
+        # Explicit create type ALWAYS counts
+        if gtype == "create":
+            return True
         ver = g.get("verification", {})
         if ver.get("type") == "cli":
             cmd = ver.get("command", "")
@@ -66,15 +78,27 @@ def _check_create_modify(goals):
 def _check_verify(goals):
     """Check if there's at least one verify goal.
 
-    Verify = HTTP endpoint check, or CLI test/lint/check command.
+    Verify = HTTP endpoint check, CLI test/lint/check command, OR an
+    explicitly-typed verify goal (type: 'verify'), OR a file_exists goal
+    with content_contains/content checks (asserts content shape, not just
+    existence).
     """
     for g in goals:
+        gtype = g.get("type", "").lower()
+        # Explicit verify type ALWAYS counts
+        if gtype == "verify":
+            return True
         ver = g.get("verification", {})
         if ver.get("type") == "http":
             return True
         if ver.get("type") == "cli":
             cmd = ver.get("command", "")
             if any(p in cmd for p in VERIFY_PATTERNS_CLI):
+                return True
+        # file_exists with content assertion counts as verify (checks shape)
+        if ver.get("type") == "file_exists":
+            expect = ver.get("expect", {})
+            if any(k in expect for k in ["content_contains", "content_not_contains", "content"]):
                 return True
     return False
 
