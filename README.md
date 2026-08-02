@@ -108,8 +108,8 @@ python3.11 -m venv .venv && .venv/bin/pip install -r requirements.txt
 # For local generation (Ollama):
 ollama pull qwen2.5-coder:7b-instruct
 
-# For cloud generation (Together AI - hosts Nemotron 3 Ultra):
-export NVIDIA_API_KEY=your_together_ai_key
+# For cloud generation (NVIDIA NIM - host any model like minimaxai/minimax-m3):
+export NVIDIA_API_KEY=your_nvidia_api_key
 
 # For training: install on a GPU machine
 pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
@@ -121,7 +121,7 @@ pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
 # Generate a validated spec from a fresh NL prompt (Ollama default)
 make spec PROMPT="Add a POST /register endpoint that accepts email and password"
 
-# Use NVIDIA Nemotron 3 Ultra via Together AI
+# Use NVIDIA NIM (default model: minimaxai/minimax-m3, base URL: https://integrate.api.nvidia.com/v1)
 make spec PROMPT="Add a PATCH /users/{id}/settings endpoint" PROVIDER=nvidia API_KEY=$NVIDIA_API_KEY
 
 # Use any OpenAI-compatible endpoint
@@ -284,7 +284,7 @@ tests/
 All generation targets accept provider overrides:
 
 ```bash
-# NVIDIA Nemotron 3 Ultra via Together AI
+# NVIDIA NIM (default: minimaxai/minimax-m3 at integrate.api.nvidia.com/v1)
 make spec PROMPT="..." PROVIDER=nvidia API_KEY=$NVIDIA_API_KEY
 
 # OpenAI GPT-4o
@@ -298,13 +298,16 @@ make spec PROMPT="..." PROVIDER=openai-compat BASE_URL=https://api.fireworks.ai/
 
 # Override sampling
 make generate N=5 PROVIDER=nvidia TEMPERATURE=0.3 MAX_TOKENS=4096
+
+# NVIDIA NIM models with longer cold start: use bigger TIMEOUT
+make generate N=1 PROVIDER=nvidia TIMEOUT=600
 ```
 
 Environment variable fallbacks:
 - `PROVIDER` → `ollama` (default)
 - `MODEL` → provider-specific default
 - `API_KEY` → `OPENAI_API_KEY`, `NVIDIA_API_KEY`, `ANTHROPIC_API_KEY`
-- `BASE_URL` → `OPENAI_BASE_URL`, `NVIDIA_BASE_URL`
+- `BASE_URL` → `OPENAI_BASE_URL`, `NVIDIA_BASE_URL` (default `https://integrate.api.nvidia.com/v1`)
 - `TEMPERATURE` → `0.2`
 - `MAX_TOKENS` → `2048`
 
@@ -386,9 +389,9 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 | qwen3.5-4b-128k | 128K | Yes | Fast | Works | Larger context fallback |
 | qwen3.5-9b-code:128k | 128K | Yes | Slow | Excellent | Higher quality if time allows |
 | deepseek-r1:7b | 128K | TBD | Fast | YAML syntax errors | Not recommended for spec gen |
-| **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via Together AI (`--provider nvidia`)** |
+| **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via NVIDIA NIM (`--provider nvidia`)** |
 
-**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama. Cloud → `nvidia/nemotron-3-ultra` via Together AI (`--provider nvidia`).
+**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama. Cloud → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`, base URL `https://integrate.api.nvidia.com/v1`).
 
 ---
 

@@ -26,7 +26,8 @@ All 90 tests passing. Complex prompts (scheduled tasks, multi-endpoint features)
 | qwen3.5-4b-128k | No (was regressed) | Good | Larger context; was default until model regression discovered |
 | qwen3.5-9b-code:128k | No | Excellent | Times out at 600s on M1 — too slow for batch runs |
 | deepseek-r1:7b | No | Excellent structure understanding | YAML syntax errors (inline comments after quotes, @ in plain values, indentation) |
-| **Nemotron 3 Ultra** | Cloud | Excellent | Via Together AI (`--provider nvidia`), best quality when API key available |
+| **minimaxai/minimax-m3** | Cloud | Excellent | Via NVIDIA NIM (`--provider nvidia`, base `https://integrate.api.nvidia.com/v1`). Works but cold start can take 3-5 minutes due to 15K input tokens (60K char system prompt). Use `TIMEOUT=600` for batch runs. Tested 2026-07-30 with health-endpoint prompt: validated on attempt 2. |
+| **Nemotron 3 Ultra** | Cloud | Excellent | Available on same NVIDIA NIM endpoint (`nvidia/nemotron-3-ultra-550b-a55b`), also subject to same timeout considerations |
 
 **Generation mode matrix** (Makefile):
 
