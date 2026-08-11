@@ -9,23 +9,23 @@ The central thesis: most time in AI-assisted development is lost before the AI a
 ```text
 Human natural-language request
         │
-        ��� � � ▼
+        � ▼
 Spec-Forge (LLM + validator)
 Generates:
     data/training_data.jsonl   (valid prompt + spec_yaml pairs)
     data/failed_specs.jsonl    (invalid specs, saved for analysis)
         │
-        ��� � � ▼
+        � ▼
 Runbook Scorer (standalone, post-generation)
 Scores:
     5 categories — Intent, Preconditions, Structure, Testability, Coverage
     Hard gate: missing Inspect/Create/Verify = 0.0
         │
-        ��� � � ▼
+        � ▼
 Human Review
 "L1-L4 look good. Approve."
         │
-        ��� � � ▼
+        � ▼
 COMMAND_RUNWAY Skill
 Consumes:
     a validated spec (single-feature YAML)
@@ -39,25 +39,25 @@ Produces:
         • rollback guidance
         • completion criteria
         │
-        ��� � � ▼
+        � ▼
 GRG Executor (with COMMAND_RUNWAY pattern integration)
 Consumes:
     a validated spec OR COMMAND_RUNWAY plan JSON
 Produces (all under foreign/ directory):
-    ��� � � ✓ implementation source files
-    ��� � � ✓ test files
-    ��� � � ✓ RUNBOOK.md (human-readable execution log with GRG scores)
-    ��� � � ✓ RUNBOOK.json (machine-readable execution data)
-    ��� � � ✓ automatic ruff check --fix on generated code
+    • implementation source files
+    • test files
+    • RUNBOOK.md (human-readable execution log with GRG scores)
+    • RUNBOOK.json (machine-readable execution data)
+    • automatic ruff check --fix on generated code
         │
-        ��� � � ▼
+        � ▼
 Completed Feature
 Outputs:
-    ��� � � ✓ implementation complete
-    ��� � � ✓ all tests passing
-    ��� � � ✓ OpenAPI updated
-    ��� � � ✓ documentation synchronized
-    ��� � � ✓ human notified
+    • implementation complete
+    • all tests passing
+    • OpenAPI updated
+    • documentation synchronized
+    • human notified
 ```
 
 ## Spec Enrichment (IMPROVE_SPEC)
@@ -272,7 +272,7 @@ make grg-full PROMPT="Add a POST /webhook endpoint that validates signature" PRO
 After implementing the GRG executor as an automated executor on top of the COMMAND_RUNWAY pattern:
 
 1. **L1: GRGExecutor** — Built and tested (`/Users/nickrotich/.hermes/skills/grg_agent/grg_agent/executor.py`)
-2. **L2: GRG composite as ��� � � ✓ gate** — Integrated in stage completion (`model_prob × α × (1+max(0,Vα))` with threshold `config.composite_floor * 0.2`)
+2. **L2: GRG composite as � ✓ gate** — Integrated in stage completion (`model_prob × α × (1+max(0,Vα))` with threshold `config.composite_floor * 0.2`)
 3. **L3: DiversityController** — Multi-candidate generation wired into `_run_llm_generate`
 4. **L4: hermes_skill.py wiring** — Added `grg:execute` command to skill manifest
 5. **L5: Make targets** — Added `grg-spec`, `grg-plan`, `grg-run`, `grg-verify`, `grg-full`, `grg-clean`
