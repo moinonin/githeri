@@ -1,0 +1,9 @@
+README.md
+__init__.py
+pyproject.toml
+./__init__.py
+grg_agent.egg-info/PKG-INFO
+grg_agent.egg-info/SOURCES.txt
+grg_agent.egg-info/dependency_links.txt
+grg_agent.egg-info/requires.txt
+grg_agent.egg-info/top_level.txt

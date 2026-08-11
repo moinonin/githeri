@@ -214,6 +214,41 @@ clean:
 	@echo "🧹 Removing $(OUTPUT)"
 	rm -f $(OUTPUT)
 
+# GRG Agent integration targets (L5)
+# Execute COMMAND_RUNWAY plans with GRG quality gates
+grg-spec:
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make grg-spec PROMPT="<feature>" OR make grg-spec PROMPT_FILE=path [PROVIDER=ollama|hermes]'; exit 2; fi
+	@if [ -n "$(PROMPT_FILE)" ]; then PROMPT="$$(cat $(PROMPT_FILE))"; else PROMPT="$(PROMPT)"; fi
+	@echo "🚀 GRG: Generating validated spec from prompt..."
+	@$(PYTHON) scripts/grg_make_spec.py $(PROVIDER) "$$PROMPT"
+
+grg-plan:
+	@if [ -z "$(SPEC)" ]; then echo 'Usage: make grg-plan SPEC=path/to/spec.yaml'; exit 2; fi
+	@echo "📐 GRG: Generating plan from spec..."
+	@$(PYTHON) scripts/plan_from_spec.py "$(SPEC)"
+
+grg-run:
+	@if [ -z "$(PLAN)" ]; then echo 'Usage: make grg-run PLAN=path/to/plan.json [PROVIDER=ollama|hermes]'; exit 2; fi
+	@echo "🏃 GRG: Executing plan with quality gates..."
+	@PYTHONPATH=/Users/nickrotich/.hermes/skills/grg_agent:$$PYTHONPATH $(PYTHON) -m grg_agent.executor --plan "$(PLAN)" --provider $(PROVIDER)
+
+grg-verify:
+	@if [ -z "$(RUNBOOK)" ]; then echo 'Usage: make grg-verify RUNBOOK=RUNBOOK.json'; exit 2; fi
+	@echo "✅ GRG: Verifying runbook..."
+	@PYTHONPATH=/Users/nickrotich/.hermes/skills/grg_agent:$$PYTHONPATH $(PYTHON) -m grg_agent.executor --verify "$(RUNBOOK)"
+
+grg-full:
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make grg-full PROMPT="<feature>" OR make grg-full PROMPT_FILE=path [PROVIDER=ollama|hermes]'; exit 2; fi
+	@if [ -n "$(PROMPT_FILE)" ]; then PROMPT="$$(cat $(PROMPT_FILE))"; else PROMPT="$(PROMPT)"; fi
+	@echo "🚀 GRG: Full pipeline: NL → Spec → Plan → Execute → Runbook"
+	@$(PYTHON) scripts/grg_make_spec.py $(PROVIDER) "$$PROMPT"
+
+grg-clean:
+	@echo "🧹 Removing foreign/ artifacts directory..."
+	@rm -rf foreign/
+	@echo "✅ Done. Native project files untouched."
+
+# Include existing help target
 help:
 	@echo "Usage:"
 	@echo "  make spec PROMPT=\"<text>\"          Generate a validated spec from a fresh NL feature request"
@@ -247,3 +282,11 @@ help:
 	@echo "  make alerts                         Check for anomalies"
 	@echo "  make guardrails-pipeline FEATURE=x   Run production guardrails pipeline"
 	@echo "  make autonomous-cycle SPEC=prompt.txt  Full NL → spec → plan → execute → report"
+	@echo ""
+	@echo "GRG Agent (COMMAND_RUNWAY + GRG Quality Gates):"
+	@echo "  make grg-spec PROMPT=\"<text>\"     Generate validated spec with GRG agent"
+	@echo "  make grg-plan SPEC=<path>           Generate plan from spec"
+	@echo "  make grg-run PLAN=<path>            Execute plan with GRG quality gates"
+	@echo "  make grg-verify RUNBOOK=<path>      Verify runbook completeness"
+	@echo "  make grg-full PROMPT=\"<text>\"      Full NL → Spec → Plan → Execute → Runbook"
+	@echo "  make grg-clean                      Remove foreign/ artifacts (generated code)"
