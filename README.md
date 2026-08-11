@@ -6,26 +6,26 @@ The central thesis: most time in AI-assisted development is lost before the AI a
 
 ## Pipeline
 
-```
+```text
 Human natural-language request
         │
-        ▼
+        ��� � � ▼
 Spec-Forge (LLM + validator)
 Generates:
     data/training_data.jsonl   (valid prompt + spec_yaml pairs)
     data/failed_specs.jsonl    (invalid specs, saved for analysis)
         │
-        ▼
+        ��� � � ▼
 Runbook Scorer (standalone, post-generation)
 Scores:
     5 categories — Intent, Preconditions, Structure, Testability, Coverage
     Hard gate: missing Inspect/Create/Verify = 0.0
         │
-        ▼
+        ��� � � ▼
 Human Review
 "L1-L4 look good. Approve."
         │
-        ▼
+        ��� � � ▼
 COMMAND_RUNWAY Skill
 Consumes:
     a validated spec (single-feature YAML)
@@ -39,26 +39,25 @@ Produces:
         • rollback guidance
         • completion criteria
         │
-        ▼
-Executor (any coding agent)
-Reads:
-    COMMAND_RUNWAY.md
-For each command:
-    ✓ modify code
-    ✓ create/update tests
-    ✓ execute verification commands
-    ✓ record results
-    ✓ continue automatically
-    ✓ request human assistance only when blocked
+        ��� � � ▼
+GRG Executor (with COMMAND_RUNWAY pattern integration)
+Consumes:
+    a validated spec OR COMMAND_RUNWAY plan JSON
+Produces (all under foreign/ directory):
+    ��� � � ✓ implementation source files
+    ��� � � ✓ test files
+    ��� � � ✓ RUNBOOK.md (human-readable execution log with GRG scores)
+    ��� � � ✓ RUNBOOK.json (machine-readable execution data)
+    ��� � � ✓ automatic ruff check --fix on generated code
         │
-        ▼
+        ��� � � ▼
 Completed Feature
 Outputs:
-    ✓ implementation complete
-    ✓ all tests passing
-    ✓ OpenAPI updated
-    ✓ documentation synchronized
-    ✓ human notified
+    ��� � � ✓ implementation complete
+    ��� � � ✓ all tests passing
+    ��� � � ✓ OpenAPI updated
+    ��� � � ✓ documentation synchronized
+    ��� � � ✓ human notified
 ```
 
 ## Spec Enrichment (IMPROVE_SPEC)
@@ -94,8 +93,6 @@ The scorer (`scripts/runbook_scorer.py`) evaluates five weighted categories:
 **Hard gate**: If any of the three runway stages (Inspect, Create/Modify, Verify) is missing, the spec scores **0.0** and is not runbook-ready.
 
 The scorer now **honors explicit `type` on goals** — a goal with `type: create` counts as Create/Modify even if its verification is `file_exists` (executor will generate the file). Similarly `type: inspect` and `type: verify` map directly to stages.
-
----
 
 ## Quick Start
 
@@ -186,98 +183,25 @@ make upload-hf REPO=githeri/qwen3.5-4b-128k-specforge PRIVATE=1  # private repo
 make install-skill             # copies skills/spec-forge/ to ~/.hermes/skills/spec-forge/
 ```
 
----
+### 6. Autonomous Execution with Isolation (NEW)
 
-## Generation + Scoring Architecture
+The GRG executor now isolates all generated artifacts in a `foreign/` directory to prevent mixing with native project files.
 
-Generation and scoring are decoupled:
+```bash
+# Full pipeline from a validated spec (bypassing NL→Spec limit with small models)
+make grg-plan SPEC=/tmp/your_spec.yaml
+make grg-run PLAN=/tmp/test_plan.json PROVIDER=ollama
+# All outputs appear in foreign/ directory
 
-- **Generation** (`run_pipeline.py`): prompts LLM → extracts YAML → validates → saves. Valid specs go to `data/training_data.jsonl`. Invalid specs (after 3 retry attempts) go to `data/failed_specs.jsonl` with their validation errors recorded. Every final attempt is saved, regardless of pass/fail.
+# Or run the entire flow with a fresh prompt (requires stronger model for spec generation)
+make grg-full PROMPT="Your prompt here" PROVIDER=ollama
 
-- **Scoring** (`score_corpus.py`): reads a JSONL file, scores each spec against runbook criteria, writes back with `runbook_score` and `above_threshold` fields. Run independently via `make score` or `make score-failed`.
+# Verify runbook completeness
+make grg-verify RUNBOOK=foreign/RUNBOOK.json
 
-- **Hard gate** (`runbook_scorer.py`): specs missing any of Inspect/Create/Verify stages score 0.0. The scorer uses harsh penalties for missing dependencies, context mismatches, and missing stage types.
-
----
-
-## Repository Layout
-
+# Clean generated artifacts
+make grg-clean   # removes foreign/ entirely
 ```
-scripts/
-  prompt_generator.py      — seed bank of realistic feature requests (475 prompts)
-  run_pipeline.py          — orchestrator: seed prompt → LLM → YAML → validate → save
-  validator.py             — the spec conformance gate (canonical vocabulary + quality)
-  runbook_scorer.py        — runbook readiness scorer (5 categories, hard gate)
-  score_corpus.py          — scores all specs in a JSONL file (standalone)
-  plan_from_spec.py        — extracts a validated spec and emits the COMMAND_RUNWAY plan prompt
-  convert_to_chat.py       — converts training_data.jsonl → chat format for fine-tuning
-  train.py                 — LoRA fine-tuning script (Unsloth + qwen3.5-4b-128k)
-  merge_and_export.py      — merges adapter + exports GGUF (q4_k_m, q8_0) for Ollama
-  eval_model.py            — evaluates fine-tuned model on held-out prompts
-  upload_to_hf.py          — uploads model files to HuggingFace Hub (uses HF_TOKEN from .env)
-skills/
-  spec-forge/              — the Spec-Forge skill (scripts + SKILL.md + references)
-  command-runway-pattern/  — the Command Runway Pattern skill (references + templates)
-  runbookprompt.md         — the COMMAND_RUNWAY plan-generation prompt
-  runbook.md               — the runbook template (execution log layout)
-docs/
-  spec-forge.yml           — gold project-level example (VAE, 22 stages, G1..G19)
-  spec-blueprint.md        — pipeline diagram
-  SPRINTS.md               — sprint breakdown + status
-  scoring_spec.md          — runbook scoring specification
-  training_data_spec.md    — guide for chat format conversion
-  IMPROVE_SPEC.md          — spec enrichment field specification
-MODEL_CARD.md              — standard HF model card (uploaded as README.md to Hub)
-data/
-  training_data.jsonl      — valid prompt+spec pairs (generation output)
-  training_data_chat.jsonl — chat-format training data (for fine-tuning)
-  failed_specs.jsonl       — invalid specs with validation errors (for analysis)
-  eval_results.json        — eval results from make eval-model
-tests/
-  test_validator.py        — 42 tests covering canonical vocabulary + gates + enrichment
-  test_plan_from_spec.py   — 6 tests covering spec extraction + prompt assembly
-  test_runbook_scorer.py   — 42 tests covering runbook scorer (spec/execution/pipeline health)
-```
-
----
-
-## Prerequisites
-
-- Python 3.11+ (the repo ships a `.venv`; activate or use `.venv/bin/python`)
-- **For local generation**: Ollama running locally with `qwen2.5-coder:7b-instruct` (recommended) or `qwen3.5-4b-128k`
-- **For cloud generation**: API key for Together AI (`NVIDIA_API_KEY`), Fireworks, or any OpenAI-compatible endpoint
-- `requirements.txt` deps — install via `pip install -r requirements.txt`
-- **For training**: CUDA GPU with 8GB+ VRAM, Unsloth, trl, peft, bitsandbytes
-- **For HF upload**: `HF_TOKEN` set in `.env` file
-
----
-
-## Make Targets Quick Reference
-
-| Target | Description |
-|--------|-------------|
-| `make spec PROMPT="..."` | Generate a validated spec from a fresh NL prompt |
-| `make spec-and-plan PROMPT="..."` | End-to-end: NL → validated spec → plan prompt |
-| `make generate N=10` | Generate N random specs from seed bank (default N=2) |
-| `make generate N=random` | Same as N=10, explicit random mode |
-| `make generate N=all` | ALL 475 seed prompts in sequential order |
-| `make generate-random` | Alias: 10 random specs (good for short test runs) |
-| `make generate-all` | Alias: ALL seed prompts in order |
-| `make check` | Pretty-print first corpus entry |
-| `make validate` | Validate all specs in corpus |
-| `make validate-one SPEC=path.yaml` | Validate single spec file |
-| `make score` | Score all specs against runbook criteria (standalone) |
-| `make score-failed` | Score failed specs in data/failed_specs.jsonl |
-| `make plan SPEC=x` | Emit COMMAND_RUNWAY plan prompt for spec |
-| `make convert-chat [MIN_SCORE=0.75]` | Convert training_data.jsonl → chat format (filters by score) |
-| `make train` | Run LoRA fine-tuning (qwen3.5-4b-128k) |
-| `make merge` | Merge adapter + export GGUF for Ollama |
-| `make eval-model` | Evaluate fine-tuned model on held-out prompts |
-| `make upload-hf REPO=<repo>` | Upload model to HuggingFace Hub (requires HF_TOKEN in .env) |
-| `make install-skill` | Install spec-forge skill to ~/.hermes/skills/ |
-| `make uninstall-skill` | Remove spec-forge skill |
-| `make test` | Run full test suite (90 tests) |
-| `make clean` | Delete training_data.jsonl |
 
 ### Provider Configuration
 
@@ -311,11 +235,9 @@ Environment variable fallbacks:
 - `TEMPERATURE` → `0.2`
 - `MAX_TOKENS` → `2048`
 
----
-
 ## Autonomous Execution System
 
-The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using an LLM agent (with self-healing capabilities).
+The autonomous execution system takes a natural language prompt and produces a working implementation without human intervention in the loop. It uses the Spec-Forge pipeline to generate a validated spec, then uses the Command Runway skills to generate a plan and runbook, and finally executes the runbook using the GRG executor (with self-healing capabilities via GRG quality gates).
 
 For detailed instructions, see [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md).
 
@@ -336,11 +258,29 @@ make spec-and-plan PROMPT="Add file upload endpoint"
 
 # Makefile: full autonomous cycle (spec -> plan -> runbook -> execute -> report)
 make autonomous-cycle SPEC=specs/test-endpoint.yaml
+
+# GRG isolated execution (recommended for clean workspace)
+make grg-full PROMPT="Add a POST /webhook endpoint that validates signature" PROVIDER=ollama
+# Outputs: foreign/src/, foreign/tests/, foreign/RUNBOOK.md, foreign/RUNBOOK.json
 ```
 
----
-
 ## Recent Enhancements
+
+### 2026-08-11 (Latest)
+
+#### GRG + COMMAND_RUNWAY Integration (L1-L8 Complete)
+After implementing the GRG executor as an automated executor on top of the COMMAND_RUNWAY pattern:
+
+1. **L1: GRGExecutor** — Built and tested (`/Users/nickrotich/.hermes/skills/grg_agent/grg_agent/executor.py`)
+2. **L2: GRG composite as ��� � � ✓ gate** — Integrated in stage completion (`model_prob × α × (1+max(0,Vα))` with threshold `config.composite_floor * 0.2`)
+3. **L3: DiversityController** — Multi-candidate generation wired into `_run_llm_generate`
+4. **L4: hermes_skill.py wiring** — Added `grg:execute` command to skill manifest
+5. **L5: Make targets** — Added `grg-spec`, `grg-plan`, `grg-run`, `grg-verify`, `grg-full`, `grg-clean`
+6. **L6: Runbook serialization** — RUNBOOK.md + RUNBOOK.json generated under `foreign/`
+7. **L7: IMPROVE_SPEC enrichment** — Implemented in spec validation (business_rules, test_fixtures, environment, global_verification)
+8. **L8: Failure procedure compliance** — Retry logic with corrective actions based on error diagnosis
+
+**Key Innovation**: All generated artifacts (source code, tests, runbooks) are now isolated in the `foreign/` directory, keeping the native project pristine. Use `make grg-clean` to wipe generated artifacts without touching native files.
 
 ### 2026-07-30 (Latest)
 
@@ -350,7 +290,7 @@ After analyzing a 10-spec batch run, identified 7 recurring failure patterns and
 1. **Minimal structural skeleton in SYSTEM_PROMPT** — eliminated top-level field confusion
 2. **task_id validator check** — rejects L11/G18-style IDs, requires descriptive slug like `jwt-auth-login`
 3. **Verification types & expect keys table** — explicit vocabulary reduces hallucinated keys
-4. **Placeholder ban strengthened** — concrete examples in prompt (`JWT_SECRET: "test-secret-..."`, `DATABASE_URL: "postgresql://user:testpass@..."`) + validator hint
+4. **Placeholder ban strengthened** — concrete examples in prompt (`JWT_SECRET: "test-secret-..."`, `DATABASE_URL: "postgresql://user:***@..."`) + validator hint
 5. **Helpful error hints** — "These fields belong inside a goal under `local_goals`, not at the spec root"
 6. **depends_on validator hints** — rejects L/G refs, redirects to task_ids/stage names
 7. **Structural acceptance_criteria template** — local goal field, not top-level
@@ -379,8 +319,6 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 - Near-duplicate detection now handles malformed `expect` blocks defensively
 - All 90 tests pass
 
----
-
 ## Model Compatibility Matrix
 
 | Model | Context | Tools | Speed (M1 16GB) | Spec Gen | Recommended Use |
@@ -393,8 +331,6 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 
 **Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama. Cloud → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`, base URL `https://integrate.api.nvidia.com/v1`).
 
----
-
 ## For More Information
 
 - [docs/SPRINTS_AUTONOMOUS.md](docs/SPRINTS_AUTONOMOUS.md) — sprint breakdown, model experiments, decisions, next steps
@@ -405,3 +341,4 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 - [MODEL_CARD.md](MODEL_CARD.md) — model card (uploaded to HF Hub)
 - [skills/spec-forge/SKILL.md](skills/spec-forge/SKILL.md) — Spec-Forge skill reference
 - [skills/command-runway-pattern/SKILL.md](skills/command-runway-pattern/SKILL.md) — Command Runway pattern skill
+- [skills/grg_agent/SKILL.md](skills/grg_agent/SKILL.md) — GRG Agent skill reference
