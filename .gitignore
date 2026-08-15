@@ -1,9 +1,12 @@
 .venv
 .env
 *.pyc
+#*.whl
 karakana/
 models/
 output/
 apps/
 data/
 foreign/
+unsloth_compiled_cache/
+

@@ -4,7 +4,7 @@
 from dataclasses import dataclass
 from typing import Tuple, Optional, List
 
-# Use the main grg package which is properly installed
+# Use the grg package which provides GRG functionality
 from grg import AlphaMomentumTracker, compute_structural_alpha
 
 

@@ -218,7 +218,7 @@ class GRGAgentSkill:
             # Load spec, generate plan, execute
             # First validate the spec
             import sys
-            sys.path.insert(0, '/Users/nickrotich/Desktop/portfolio/projects/python/ai/githeri/scripts')
+            sys.path.insert(0, '/home/defi/Desktop/portfolio/projects/python/githeri/scripts')
             from validator import validate_spec
             import yaml
             
@@ -243,8 +243,8 @@ class GRGAgentSkill:
                 ['python', '-m', 'plan_from_spec', spec_file],
                 capture_output=True,
                 text=True,
-                cwd='/Users/nickrotich/Desktop/portfolio/projects/python/ai/githeri',
-                env={**os.environ, 'PYTHONPATH': '/Users/nickrotich/.hermes/skills/grg_agent'}
+                cwd='/home/defi/Desktop/portfolio/projects/python/githeri',
+                env={**os.environ, 'PYTHONPATH': '/home/defi/.hermes/skills/autonomous-ai-agents/grg_agent'}
             )
             
             if result.returncode != 0:
@@ -258,20 +258,19 @@ class GRGAgentSkill:
                 "note": "Plan generated. Execute with grg:execute --plan <plan_json>"
             }
         else:
-            # Generate from NL task - use run_pipeline.py
-            import subprocess
-            result = subprocess.run(
-                ['python', 'scripts/run_pipeline.py', '--prompt', task, '--provider', provider],
-                capture_output=True,
-                text=True,
-                cwd='/Users/nickrotich/Desktop/portfolio/projects/python/ai/githeri',
-            )
+            # Generate from NL task - use GRG agent directly
+            candidate = await self.agent.solve(task, max_iterations=config.max_iterations)
             
             return {
                 "task": task,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "exit_code": result.returncode,
+                "success": candidate.verified,
+                "code": candidate.text,
+                "strategy": candidate.strategy,
+                "iteration": candidate.iteration,
+                "composite": candidate.score.mean_composite if candidate.score else 0,
+                "verified": candidate.verified,
+                "metadata": candidate.metadata,
+                "stats": self.agent.get_stats(),
             }
 
 

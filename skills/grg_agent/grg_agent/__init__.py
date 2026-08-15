@@ -13,14 +13,22 @@ from .planner import CodePlanner, create_planner, Plan
 from .verifier import CodeVerifier, create_verifier, VerificationResult
 from .executor import GRGExecutor, Runbook, RunbookStage, RunbookCommand
 
-# Local model version
-from .llm_skill import LLMSkill, create_llm_skill
-from .agent import GRGAgent, create_agent
-
-# Hermes version
+# Hermes version (primary - no heavy deps)
 from .llm_client import HermesLLMClient, GenerationResult, EmbeddingResult, create_hermes_client
 from .agent_hermes import GRGAgentHermes, create_agent_hermes
 from .hermes_skill import GRGAgentSkill, create_skill, SKILL_MANIFEST
+
+# Local model version (optional, heavy deps)
+try:
+    from .llm_skill import LLMSkill, create_llm_skill
+    from .agent import GRGAgent, create_agent
+    _LOCAL_AVAILABLE = True
+except ImportError:
+    _LOCAL_AVAILABLE = False
+    LLMSkill = None
+    create_llm_skill = None
+    GRGAgent = None
+    create_agent = None
 
 __all__ = [
     # Config
@@ -51,13 +59,7 @@ __all__ = [
     "RunbookStage",
     "RunbookCommand",
     
-    # Local model version
-    "LLMSkill",
-    "create_llm_skill",
-    "GRGAgent",
-    "create_agent",
-    
-    # Hermes version
+    # Hermes version (primary)
     "HermesLLMClient",
     "GenerationResult",
     "EmbeddingResult",
@@ -67,4 +69,10 @@ __all__ = [
     "GRGAgentSkill",
     "create_skill",
     "SKILL_MANIFEST",
+    
+    # Local model version (optional)
+    "LLMSkill",
+    "create_llm_skill",
+    "GRGAgent",
+    "create_agent",
 ]
