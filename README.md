@@ -185,16 +185,19 @@ make install-skill             # copies skills/spec-forge/ to ~/.hermes/skills/s
 
 ### 6. Autonomous Execution with Isolation (NEW)
 
-The GRG executor now isolates all generated artifacts in a `foreign/` directory to prevent mixing with native project files.
+The GRG executor isolates all generated artifacts in a `foreign/` directory to prevent mixing with native project files.
 
 ```bash
-# Full pipeline from a validated spec (bypassing NL→Spec limit with small models)
+# Full pipeline from a validated spec
 make grg-plan SPEC=/tmp/your_spec.yaml
 make grg-run PLAN=/tmp/test_plan.json PROVIDER=ollama
-# All outputs appear in foreign/ directory
 
 # Or run the entire flow with a fresh prompt (requires stronger model for spec generation)
 make grg-full PROMPT="Your prompt here" PROVIDER=ollama
+
+# Use Hermes proxy for cloud models (NVIDIA Nemotron, Nous Portal, xAI Grok)
+# First: hermes proxy start --port 8465
+make grg-full PROMPT="Your prompt here" PROVIDER=hermes
 
 # Verify runbook completeness
 make grg-verify RUNBOOK=foreign/RUNBOOK.json
@@ -266,21 +269,19 @@ make grg-full PROMPT="Add a POST /webhook endpoint that validates signature" PRO
 
 ## Recent Enhancements
 
-### 2026-08-11 (Latest)
+### 2026-08-15 (This Session)
 
-#### GRG + COMMAND_RUNWAY Integration (L1-L8 Complete)
-After implementing the GRG executor as an automated executor on top of the COMMAND_RUNWAY pattern:
+#### GRG Agent Skill — Hermes Native Integration
+The GRG agent skill is now installed as a native Hermes skill (`~/.hermes/skills/autonomous-ai-agents/grg_agent/`) with full multi-provider support:
 
-1. **L1: GRGExecutor** — Built and tested (`/Users/nickrotich/.hermes/skills/grg_agent/grg_agent/executor.py`)
-2. **L2: GRG composite as � ✓ gate** — Integrated in stage completion (`model_prob × α × (1+max(0,Vα))` with threshold `config.composite_floor * 0.2`)
-3. **L3: DiversityController** — Multi-candidate generation wired into `_run_llm_generate`
-4. **L4: hermes_skill.py wiring** — Added `grg:execute` command to skill manifest
-5. **L5: Make targets** — Added `grg-spec`, `grg-plan`, `grg-run`, `grg-verify`, `grg-full`, `grg-clean`
-6. **L6: Runbook serialization** — RUNBOOK.md + RUNBOOK.json generated under `foreign/`
-7. **L7: IMPROVE_SPEC enrichment** — Implemented in spec validation (business_rules, test_fixtures, environment, global_verification)
-8. **L8: Failure procedure compliance** — Retry logic with corrective actions based on error diagnosis
+1. **Skill Installation** — Copied from `skills/grg_agent/` and installed via editable pip install
+2. **Lightweight GRG Dependency** — Uses local `grg-0.1.0-py3-none-any.whl` wheel (no karakana dependency) providing `AlphaMomentumTracker` and `compute_structural_alpha`
+3. **Hermes Proxy Support** — Skill accepts `provider` argument: `ollama` | `hermes` | `auto` — uses Hermes's configured providers (NVIDIA Nemotron, Nous Portal, xAI Grok, etc.) instead of local models
+4. **Direct GRG Agent Execution** — `grg:execute` command now calls `self.agent.solve()` directly instead of legacy `run_pipeline.py` subprocess
+5. **Make Target Integration** — `scripts/grg_make_spec.py` updated to use the skill with provider argument: `make grg-spec PROMPT="..." PROVIDER=ollama|hermes|auto`
+6. **Project Virtual Environment** — Runs in project's own `.venv/` (not external karakana venv)
 
-**Key Innovation**: All generated artifacts (source code, tests, runbooks) are now isolated in the `foreign/` directory, keeping the native project pristine. Use `make grg-clean` to wipe generated artifacts without touching native files.
+**Key Benefit**: You can now use cloud models via Hermes proxy (`hermes proxy start`) instead of relying on locally installed Ollama models. The skill routes through Hermes's provider config which supports NVIDIA Nemotron, Nous Portal, xAI Grok, and any OpenAI-compatible endpoint.
 
 ### 2026-07-30 (Latest)
 
