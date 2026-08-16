@@ -360,12 +360,58 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 |-------|---------|-------|-----------------|----------|-----------------|
 | **qwen2.5-coder:7b-instruct** | 32K | Yes | Fast | Works (best structure compliance) | **Default local (Ollama)** |
 | **qwen2.5-coder-14b-instruct-uncensored** | 32K | Yes | Medium | **Works end-to-end (GRG pipeline)** | **LM Studio local** |
+| **specforge-128k:latest** | 128K | Yes | Fast | **70% success (trained on pipeline)** | **Bulk corpus generation** |
 | qwen3.5-4b-128k | 128K | Yes | Fast | Works | Larger context fallback |
 | qwen3.5-9b-code:128k | 128K | Yes | Slow | Excellent | Higher quality if time allows |
 | deepseek-r1:7b | 128K | TBD | Fast | YAML syntax errors | Not recommended for spec gen |
 | **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via NVIDIA NIM (`--provider nvidia`)** |
 
-**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama or `qwen2.5-coder-14b-instruct-uncensored` on LM Studio. Cloud → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`, base URL `https://integrate.api.nvidia.com/v1`).
+**Current recommendation**: 
+- **Bulk corpus** → `specforge-128k:latest` on Ollama (70% success, ~170s/spec, trained on this pipeline)
+- **Specific features** → `qwen2.5-coder-14b-instruct-uncensored` on LM Studio with `make grg-full` (100% success via GRG pipeline)
+- **Default local** → `qwen2.5-coder:7b-instruct` on Ollama
+- **Cloud** → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`)
+
+## Training Data Generation Strategies
+
+Based on empirical testing (2026-08-16), here are the reliable approaches:
+
+### 1. Bulk Corpus Generation (Recommended for Training Data)
+```bash
+# Fast, decent success rate, fine-tuned for this pipeline
+make generate N=100 PROVIDER=ollama MODEL="specforge-128k:latest" BASE_URL="http://localhost:11434" TEMPERATURE=0.2 MAX_TOKENS=4096
+```
+- **Success rate**: ~70% (7/10 in testing)
+- **Speed**: ~170s/spec  
+- **Best for**: Generating large training corpora quickly
+
+### 2. High-Quality Individual Specs (GRG Pipeline)
+```bash
+# Best for specific features - multi-strategy + execution verification
+make grg-full PROMPT="Your feature" PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+```
+- **Success rate**: ~100% (execution-verified)
+- **Speed**: ~260s/spec
+- **Best for**: Critical features requiring guaranteed working specs
+
+### 3. Hybrid Workflow (Best of Both)
+```bash
+# 1. Generate bulk corpus with specforge
+make generate N=100 PROVIDER=ollama MODEL="specforge-128k:latest" BASE_URL="http://localhost:11434"
+
+# 2. Score and filter high-quality specs
+make score MIN_SCORE=0.75
+
+# 3. Re-generate failed critical specs with GRG pipeline
+make grg-full PROMPT="..." PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+```
+
+### Observed Failure Patterns (specforge-128k)
+The remaining ~30% failures are primarily:
+1. **Near-duplicate HTTP verifications** - multiple goals hitting same endpoint with same method
+2. **Missing `acceptance_criteria`** for CREATE goals
+3. **Placeholder values** in headers (e.g., `Authorization: ***Bearer ***`)
+4. **YAML block mapping errors** - CLI verification indentation issues
 
 ## For More Information
 

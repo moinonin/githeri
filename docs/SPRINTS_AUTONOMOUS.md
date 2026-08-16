@@ -134,3 +134,99 @@ If the Hermes executor prompt fix proves difficult, fix the `--executor python` 
 2. **Fix `--executor python` path** — prevent the uvicorn recursion crash (original Stage 4 failure). This bypasses Hermes entirely and runs runbook commands directly via the LLM-backed file generator.
 3. **Proxy dependency** — the executor requires the proxy at `localhost:20128` to be running. Document the startup procedure or add a health-check before execution.
 4. **Score a real run** — once the executor actually creates files and runs tests, use the new `execution_score()` and `pipeline_health_score()` functions to evaluate the full pipeline end-to-end.
+
+---
+
+## Specforge Training Data Improvements (2026-08-16)
+
+Based on empirical testing with specforge-128k:latest (70% success rate, ~30% failure), the following improvements are planned for the next iteration to push success rate toward 90%+:
+
+### 5. Increase `MAX_RETRIES` from 3 to 5
+**Location**: `scripts/run_pipeline.py` line 39 (`MAX_RETRIES = 3`)
+**Rationale**: Many specs fail on attempts 2-3 but would succeed with more retries. The retry feedback loop is effective (model fixes errors when given specific validator output). Increasing to 5 gives more opportunities for self-correction without human intervention.
+
+### 6. Lower `TEMPERATURE` from 0.2 to 0.1
+**Location**: `scripts/run_pipeline.py` line 45 (`TEMPERATURE = 0.2`) and Makefile default
+**Rationale**: At 0.2, the model still produces structural variations that cause YAML formatting errors (block mapping, placeholder handling). Lower temperature produces more deterministic, consistent output that matches the few-shot pattern exactly. The trade-off is less diversity, but for training data generation we want correctness over variety.
+
+### 7. Add Targeted Few-Shot Examples to SYSTEM_PROMPT
+**Location**: `scripts/run_pipeline.py` SYSTEM_PROMPT section (around line 390-580)
+**Rationale**: The remaining failures cluster in specific patterns that few-shot examples can address directly:
+
+**a) Near-duplicate HTTP verification prevention**
+```yaml
+# WRONG - near-duplicate (same endpoint, same method)
+local_goals:
+  - id: L3
+    verification:
+      type: http
+      method: POST
+      url: "http://localhost:8000/api/items"
+  - id: L4
+    verification:
+      type: http
+      method: POST
+      url: "http://localhost:8000/api/items"
+
+# CORRECT - distinct aspects
+local_goals:
+  - id: L3
+    verification:
+      type: http
+      method: POST
+      url: "http://localhost:8000/api/items"
+      expect:
+        status: 201
+  - id: L4
+    verification:
+      type: http
+      method: GET
+      url: "http://localhost:8000/api/items"
+      expect:
+        status: 200
+```
+
+**b) Mandatory acceptance_criteria for CREATE goals**
+```yaml
+# Every CREATE goal MUST have acceptance_criteria
+- id: L3
+  type: create
+  blueprint: |
+    from fastapi import FastAPI
+    @app.post("/api/items")
+    def create_item(...): ...
+  acceptance_criteria:  # REQUIRED
+    - test: "Valid request returns 201 with created item"
+      steps: "POST /api/items with valid data -> 201 + item in response"
+    - test: "Invalid request returns 400"
+      steps: "POST /api/items with missing fields -> 400"
+```
+
+**c) No placeholder values anywhere**
+```yaml
+# WRONG - placeholders get rejected
+headers:
+  Authorization: "Bearer ***"
+
+# CORRECT - concrete test values
+headers:
+  Authorization: "Bearer test-token-abc123"
+```
+
+**d) YAML block mapping for CLI verifications**
+```yaml
+# WRONG - scalar where mapping expected
+verification:
+  type: cli
+  command: "pytest tests/"
+
+# CORRECT - proper block mapping with exit_code
+verification:
+  type: cli
+  command: "pytest tests/ -v --tb=short"
+  expect:
+    exit_code: 0
+    stdout_contains: "passed"
+```
+
+These examples should be added to the `FEW_SHOT_EXAMPLE` or a new `ANTI_PATTERNS` section in SYSTEM_PROMPT.
