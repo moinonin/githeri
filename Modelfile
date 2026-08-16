@@ -1,2 +1,12 @@
-FROM qwen3.5:4b
-PARAMETER num_ctx 132000
+from ./q2_k.gguf
+
+template """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ if .Prompt }}<|im_start|>user
+{{ .Prompt }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+
+parameter stop "<|im_start|>"
+parameter stop "<|im_end|>"
+parameter num_ctx 131072

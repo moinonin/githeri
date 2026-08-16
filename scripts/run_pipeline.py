@@ -10,7 +10,7 @@ from validator import validate_spec
 from runbook_scorer import runbook_score
 
 # -------------------- CONFIG --------------------
-# Provider: "ollama" | "openai" | "nvidia" | "anthropic" | "openai-compat"
+# Provider: "ollama" | "openai" | "nvidia" | "anthropic" | "openai-compat" | "hermes" | "lmstudio"
 PROVIDER = "ollama"
 
 # Ollama
@@ -30,6 +30,11 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"
 NVIDIA_API_KEY = os.environ.get("NVIDIA_API_KEY", "")
 NVIDIA_BASE_URL = os.environ.get("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 NVIDIA_MODEL = os.environ.get("NVIDIA_MODEL", "minimaxai/minimax-m3")
+
+# LM Studio (OpenAI-compatible with API key)
+LMSTUDIO_API_KEY = os.environ.get("LMSTUDIO_API_KEY", "")
+LMSTUDIO_BASE_URL = os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:34149/v1")
+LMSTUDIO_MODEL = os.environ.get("LMSTUDIO_MODEL", "Bonsai-27B-Q1_0")
 
 MAX_RETRIES = 3
 MAX_CONSECUTIVE_FAILS = 10
@@ -589,7 +594,7 @@ def call_llm(system_prompt, user_prompt):
     """Call the configured LLM provider and return the response text."""
     if PROVIDER == "ollama":
         return _call_ollama(system_prompt, user_prompt)
-    elif PROVIDER in ("openai", "openai-compat", "nvidia"):
+    elif PROVIDER in ("openai", "openai-compat", "nvidia", "hermes", "lmstudio"):
         return _call_openai_compat(system_prompt, user_prompt)
     elif PROVIDER == "anthropic":
         return _call_anthropic(system_prompt, user_prompt)
@@ -612,17 +617,25 @@ def _call_ollama(system_prompt, user_prompt):
     return resp.json()["response"]
 
 def _call_openai_compat(system_prompt, user_prompt):
-    """OpenAI-compatible API (OpenAI, NVIDIA NIM, Together, Fireworks, etc.)"""
+    """OpenAI-compatible API (OpenAI, NVIDIA NIM, Together, Fireworks, Hermes Proxy, LM Studio, etc.)"""
     if PROVIDER == "nvidia":
         api_key = NVIDIA_API_KEY
         base_url = NVIDIA_BASE_URL
         model = NVIDIA_MODEL
+    elif PROVIDER == "hermes":
+        api_key = "hermes-proxy"  # placeholder, proxy ignores it
+        base_url = HERMES_PROXY_URL
+        model = HERMES_PROXY_MODEL
+    elif PROVIDER == "lmstudio":
+        api_key = LMSTUDIO_API_KEY
+        base_url = LMSTUDIO_BASE_URL
+        model = LMSTUDIO_MODEL
     else:
         api_key = OPENAI_API_KEY
         base_url = OPENAI_BASE_URL
         model = OPENAI_MODEL
 
-    if not api_key:
+    if not api_key and PROVIDER not in ("hermes", "lmstudio"):
         raise RuntimeError(f"{PROVIDER.upper()}_API_KEY not set")
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -778,7 +791,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate COMMAND_RUNWAY specs from natural language")
     parser.add_argument("--prompt", type=str, help="Feature request prompt (single spec mode)")
     parser.add_argument("--batch", type=int, help="Number of specs to generate (batch mode, default 10)")
-    parser.add_argument("--provider", type=str, choices=["ollama", "openai", "nvidia", "anthropic", "openai-compat"],
+    parser.add_argument("--provider", type=str, choices=["ollama", "openai", "nvidia", "anthropic", "openai-compat", "hermes", "lmstudio"],
                         help="LLM provider (overrides PROVIDER config)")
     parser.add_argument("--model", type=str, help="Model name (overrides provider's default model)")
     parser.add_argument("--api-key", type=str, help="API key for provider (or set via env var)")
@@ -800,6 +813,10 @@ if __name__ == "__main__":
             OLLAMA_MODEL = args.model
         elif PROVIDER == "anthropic":
             ANTHROPIC_MODEL = args.model
+        elif PROVIDER == "hermes":
+            HERMES_PROXY_MODEL = args.model
+        elif PROVIDER == "lmstudio":
+            LMSTUDIO_MODEL = args.model
     if args.api_key:
         if PROVIDER == "nvidia":
             NVIDIA_API_KEY = args.api_key
@@ -807,11 +824,20 @@ if __name__ == "__main__":
             OPENAI_API_KEY = args.api_key
         elif PROVIDER == "anthropic":
             ANTHROPIC_API_KEY = args.api_key
+        elif PROVIDER == "hermes":
+            # Hermes proxy ignores api_key
+            pass
+        elif PROVIDER == "lmstudio":
+            LMSTUDIO_API_KEY = args.api_key
     if args.base_url:
         if PROVIDER == "nvidia":
             NVIDIA_BASE_URL = args.base_url
         elif PROVIDER in ("openai", "openai-compat"):
             OPENAI_BASE_URL = args.base_url
+        elif PROVIDER == "hermes":
+            HERMES_PROXY_URL = args.base_url
+        elif PROVIDER == "lmstudio":
+            LMSTUDIO_BASE_URL = args.base_url
 
     if args.temperature:
         TEMPERATURE = args.temperature

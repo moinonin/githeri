@@ -1,0 +1,100 @@
+name: grg_agent
+version: "1.0.0"
+description: "GRG-guided autonomous coding agent using Hermes LLM proxy"
+author: "GRG Team"
+license: "MIT"
+
+entry_point: "grg_agent.hermes_skill:GRGAgentSkill"
+commands:
+  - name: "grg:solve"
+    description: "Solve a coding task with GRG agent"
+    args:
+      task:
+        type: "string"
+        required: true
+        description: "The coding task to solve"
+      iterations:
+        type: "integer"
+        required: false
+        default: 5
+        description: "Max iterations"
+      model:
+        type: "string"
+        required: false
+        description: "Override model (passed to Hermes proxy)"
+
+  - name: "grg:analyze"
+    description: "Analyze code quality with GRG"
+    args:
+      file:
+        type: "string"
+        required: true
+        description: "Path to file to analyze"
+
+  - name: "grg:config"
+    description: "Get/set GRG agent configuration"
+    args:
+      action:
+        type: "string"
+        required: true
+        enum: ["get", "set"]
+      key:
+        type: "string"
+        required: false
+      value:
+        type: "string"
+        required: false
+
+  - name: "grg:help"
+    description: "Show help for GRG agent commands"
+    args: {}
+
+config_schema:
+  max_iterations:
+    type: "integer"
+    default: 5
+    description: "Max agent iterations"
+  candidates_per_strategy:
+    type: "integer"
+    default: 3
+    description: "Candidates per strategy"
+  max_candidates:
+    type: "integer"
+    default: 15
+    description: "Max candidate pool size"
+  grg_window:
+    type: "integer"
+    default: 16
+    description: "GRG tracking window"
+  grg_threshold_mult:
+    type: "number"
+    default: 1.5
+    description: "GRG threshold multiplier"
+  diversity_temperature_range:
+    type: "array"
+    default: [0.3, 1.5]
+    description: "Temperature range for diversity"
+  temperature:
+    type: "number"
+    default: 0.8
+    description: "Default generation temperature"
+  top_p:
+    type: "number"
+    default: 0.9
+    description: "Default top-p"
+  max_tokens:
+    type: "integer"
+    default: 256
+    description: "Max tokens per generation"
+  verify_execution:
+    type: "boolean"
+    default: true
+    description: "Verify code execution"
+  verify_timeout:
+    type: "integer"
+    default: 10
+    description: "Verification timeout (seconds)"
+  hermes_proxy_url:
+    type: "string"
+    required: false
+    description: "Hermes proxy URL (default: http://localhost:8080/v1 or HERMES_PROXY_URL env)"

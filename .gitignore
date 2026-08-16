@@ -2,6 +2,7 @@
 .env
 *.pyc
 #*.whl
+*.gguf
 karakana/
 models/
 output/

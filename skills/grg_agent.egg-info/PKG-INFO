@@ -1,0 +1,622 @@
+Metadata-Version: 2.4
+Name: grg_agent
+Version: 1.0.0
+Summary: GRG-guided autonomous coding agent using Hermes LLM proxy
+Author: GRG Team
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: numpy>=1.24.0
+Requires-Dist: pydantic>=2.0.0
+Requires-Dist: pyyaml>=6.0.0
+Requires-Dist: requests>=2.31.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+
+# GRG Agent — Autonomous Coding Agent with GRG Quality Guidance
+
+> **GRG (Geometric Reasoning Governor) Agent** — An autonomous coding agent where GRG is the strategic brain and the LLM is a skill/tool. Integrates natively with Hermes as a skill plugin.
+
+---
+
+## Overview
+
+The GRG Agent treats **LLM generation as a skill** rather than a wrapper. It uses GRG per-token collapse detection as a quality signal to guide generation, verify correctness, and converge on working code — all without requiring an external oracle or ground-truth labels.
+
+### Key Innovation: GRG-as-Agent Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    HERMES (Chat / Gateway)                  │
+├─────────────────────────────────────────────────────────────┤
+│  GRG Agent Skill (examples/grg_agent/)                      │
+│  ┌──────────┐  ┌──────────┐  ┌────────────┐  ┌───────────┐  │
+│  │ PLANNER  │  │ MONITOR  │  │ DIVERSITY  │  │ VERIFIER  │  │
+│  │          │  │ (GRG)    │  │ CONTROLLER │  │           │  │
+│  │ - Decom- │  │ - α, Vα  │  │ - Prompt   │  │ - Execute │  │
+│  │   pose   │  │ - Horizon│  │   variants │  │ - Typeck  │  │
+│  │ - Strategy│ │ - Composite│ │ - Temp    │  │ - Tests   │  │
+│  │ - Tools  │  │ - Collapse│  │   sched.  │  │           │  │
+│  └────┬─────┘  └────┬─────┘  └─────┬──────┘  └─────┬─────┘  │
+│       │             │              │               │         │
+│       └─────────────┴──────┬───────┴───────────────┘         │
+│                            ▼                                  │
+│                   ┌─────────────────┐                         │
+│                   │  LLM SKILL      │  ← Hermes LLM Proxy    │
+│                   │  (generate)     │    (Ollama/OpenAI/     │
+│                   └─────────────────┘     NVIDIA/any)        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Why this matters:**
+- **LLM becomes a skill** — not the orchestrator
+- **GRG provides per-token quality signal** — detects collapse/hallucination *during* generation
+- **Diversity is explicit & iterative** — not left to temperature sampling alone
+- **Verification closes the loop** — execution + tests, not just plausibility
+- **Hermes-native** — uses your existing proxy, models, config
+
+---
+
+## Value to Hermes
+
+### 1. **Autonomous Coding Agent (Not Just Chat)**
+Transforms Hermes from an assistant into a *self-correcting agent* that:
+- Plans → Generates → Scores → Verifies → Iterates
+- Converges on **verified, executable code**
+- Exposes as slash commands: `/grg:solve`, `/grg:analyze`, `/grg:config`
+
+### 2. **Quality Signal Without Oracle**
+- **GRG Composite** = `model_prob × α × (1 + max(0, Vα))`
+- Uses **model's own logprobs** — no external judge needed
+- Detects **trajectory coherence** (not correctness per se, but structural stability)
+- **Proven**: Selector mode (N=5) achieves **80% vs 46.7% pass@1** on easy prompts
+
+### 3. **Hermes-Native Integration**
+| Feature | Value |
+|---------|-------|
+| `/grg:solve <task>` | One-command autonomous solving |
+| `/grg:analyze <file>` | GRG quality audit on existing code |
+| `/grg:config get/set` | Live config tuning (iterations, temps, GRG thresholds) |
+| Skill manifest | Auto-discovered by Hermes plugin system |
+| Proxy URL config | Uses your existing Hermes proxy (Ollama/OpenAI/NVIDIA) |
+
+### 4. **Proven Results (from repo memory)**
+- **Selector mode (N=5): 80% vs 46.7% pass@1** on easy prompts
+- **2× pass@1 on harder LeetCode** (20% → 40%) with 3 training steps
+- **Oracle collapse confirmed**: 73% → 33% when GRG signal removed
+- **Constraint+Selector kills diversity** — selector alone works best
+
+### 5. **Architecture: GRG-as-Agent, Not Wrapper**
+```
+Traditional:  LLM → (maybe) GRG scoring
+GRG Agent:    GRG (Planner/Monitor/Diversity) → LLM as skill tool
+```
+- **Decouples GRG from forward pass** — diversity is explicit, iterative
+- **LLM becomes a skill** — swappable, proxy-based, no local weights needed
+
+---
+
+## Quick Start
+
+### Prerequisites
+- Python 3.10+
+- Hermes running with LLM proxy (default: `http://localhost:8080/v1`)
+- Or set `HERMES_PROXY_URL` environment variable
+
+### Install as Hermes Skill
+```bash
+# From grg repo root
+mkdir -p ~/.hermes/skills/grg_agent
+cp -r examples/grg_agent/* ~/.hermes/skills/grg_agent/
+
+# Restart Hermes or reload skills
+```
+
+### Use in Hermes
+```
+/grg:solve "def two_sum(nums, target): return indices of two numbers adding to target"
+/grg:analyze ./my_module.py
+/grg:config get
+/grg:config set max_iterations 10
+```
+
+### Direct CLI Usage (for testing)
+```bash
+# Requires running Hermes proxy at localhost:8080/v1
+export HERMES_PROXY_URL=http://localhost:8080/v1
+python -m examples.grg_agent.hermes_skill "def fibonacci(n): return nth fibonacci"
+```
+
+### Run Component Tests (no proxy needed)
+```bash
+python -m examples.grg_agent.test_hermes
+```
+Uses `MockHermesClient` — tests all components without API calls.
+
+---
+
+## File Structure
+
+```
+examples/grg_agent/
+├── __init__.py              # Exports all public classes
+├── config.py                # GRGAgentConfig dataclass
+├── state.py                 # Candidate, Score, Strategy, TrajectoryState
+├── llm_client.py            # HermesLLMClient (proxy wrapper)
+├── llm_skill.py             # LLMSkill (local model wrapper, optional)
+├── monitor.py               # GRGMonitor (AlphaMomentumTracker reuse)
+├── diversity.py             # DiversityController (prompt/temp variants)
+├── planner.py               # CodePlanner (task decomposition)
+├── verifier.py              # CodeVerifier (execution, types, tests)
+├── agent.py                 # GRGAgent (local model orchestrator)
+├── agent_hermes.py          # GRGAgentHermes (proxy-based orchestrator)
+├── hermes_skill.py          # GRGAgentSkill (Hermes plugin entry point)
+├── skill.yaml               # Skill manifest for Hermes
+├── spec.md                  # Technical specification
+├── SPEC_HERMES_SKILL.md     # Hermes skill packaging spec
+├── test_agent.py            # Local agent integration tests
+├── test_hermes.py           # Hermes component tests (mock)
+├── test_full_agent.py       # Full agent test with local model
+└── README.md                # This file
+```
+
+---
+
+## Core Components
+
+### 1. `config.py` — `GRGAgentConfig`
+Central configuration dataclass with all tunable parameters:
+
+```python
+@dataclass
+class GRGAgentConfig:
+    # Agent loop
+    max_iterations: int = 5
+    candidates_per_strategy: int = 3
+    max_candidates: int = 15
+    max_strategies: int = 4
+
+    # GRG Monitor
+    grg_window: int = 16
+    grg_threshold_mult: float = 1.5
+    alpha_critical: float = 0.1
+    horizon_critical: float = 5.0
+    composite_floor: float = 0.5
+    composite_ceiling: float = 1.5
+
+    # Diversity
+    diversity_temperature_range: Tuple[float, float] = (0.3, 1.5)
+    diversity_min_cosine: float = 0.3
+    diversity_max_candidates: int = 20
+
+    # Generation defaults
+    temperature: float = 0.8
+    top_p: float = 0.9
+    max_tokens: int = 256
+    planner_temperature: float = 0.7
+
+    # Verification
+    verify_execution: bool = True
+    verify_timeout: int = 10
+
+    # Hermes proxy
+    hermes_proxy_url: Optional[str] = None  # Defaults to HERMES_PROXY_URL env or localhost:8080/v1
+```
+
+### 2. `state.py` — Core Data Structures
+
+```python
+@dataclass
+class Candidate:
+    text: str                    # Generated code
+    logprobs: List[float]        # Token logprobs from LLM
+    strategy: str                # Strategy name (standard, cot, test_first, decompose)
+    iteration: int               # Iteration number
+    score: Optional[Score] = None
+    verified: bool = False
+    metadata: Dict = field(default_factory=dict)
+
+@dataclass
+class Score:
+    composites: List[float]      # Per-window composites
+    mean_composite: float        # Average composite
+    grg_stats: Dict              # alpha, v_alpha, m_alpha, horizon, is_collapsing, is_stable
+
+@dataclass
+class Strategy:
+    name: str
+    prompt: str
+    temperature: float
+    top_p: float
+    description: str
+
+@dataclass
+class TrajectoryState:
+    candidates: List[Candidate]
+    iteration: int
+    grg_history: List[GRGHistoryEntry]
+    best_candidate: Optional[Candidate]
+    strategies_used: List[str]
+    diversity_history: List[float]
+```
+
+### 3. `llm_client.py` — `HermesLLMClient`
+**Proxy wrapper** for Hermes LLM proxy (OpenAI-compatible):
+- `generate(prompt, **kwargs)` → `GenerationResult(text, logprobs, finish_reason, usage, model)`
+- `generate_batch(prompts, num_candidates, **kwargs)` → batched generation
+- `get_embeddings(texts, model)` → embeddings for diversity
+- Handles proxy URL, timeouts, retries
+- **No local model weights** — pure proxy client
+
+### 4. `monitor.py` — `GRGMonitor`
+**Reuses GRG inference components:**
+- `AlphaMomentumTracker` — tracks α (structural momentum) per token
+- `compute_structural_alpha` — computes α from logprobs
+- `composite_confidence` — `p_token × α × (1 + max(0, Vα))`
+
+```python
+monitor = GRGMonitor(config)
+monitor.score_candidate(candidate)  # Adds candidate.score
+monitor.score_batch(candidates)     # Batch scoring
+stats = monitor.get_trajectory_stats()  # Aggregated stats
+```
+
+**GRG Stats per candidate:**
+- `final_alpha` — structural momentum
+- `final_v_alpha` — velocity of α
+- `final_m_alpha` — momentum of α
+- `final_horizon` — collapse horizon (tokens until α < critical)
+- `is_collapsing` — horizon < critical
+- `is_stable` — α > 0 and not collapsing
+
+### 5. `diversity.py` — `DiversityController`
+**Explicit diversity management** (not just temperature):
+
+```python
+diversity = DiversityController(config)
+variants = diversity.generate_variants(
+    base_prompt="def fibonacci(n):",
+    num_variants=5,
+    iteration=0,
+    previous_best=None
+)
+# Returns: List[PromptVariant(name, prompt, temperature, top_p)]
+```
+
+**Variant types:**
+- `base` — original prompt, default temperature
+- `cot` — chain-of-thought prefix
+- `decompose` — step-by-step decomposition
+- `test_first` — write tests first
+- `explain` — explain approach before coding
+- Temperature scheduled per iteration: `temp = base + (iteration / max) * range`
+
+**Candidate pool:** Maintains embedding-based diversity (cosine similarity < threshold)
+
+### 6. `planner.py` — `CodePlanner`
+**Task decomposition into strategies:**
+
+```python
+planner = CodePlanner(config)
+plan = planner.create_plan("def two_sum(nums, target): ...")
+# Returns: Plan(task_type, strategies[], estimated_iterations)
+```
+
+**Strategy types detected:**
+- `algorithmic` — two_sum, sorting, graph, DP
+- `api` — REST, GraphQL, database
+- `refactor` — cleanup, patterns, types
+- `debug` — fix bug, add logging
+- `test` — unit tests, property tests
+
+### 7. `verifier.py` — `CodeVerifier`
+**Execution verification:**
+- Runs code in isolated subprocess (timeout configurable)
+- Captures stdout/stderr/exceptions
+- Optional: type checking (mypy), test discovery (pytest)
+
+```python
+verifier = CodeVerifier(config)
+result = verifier.verify(candidate, task_description)
+# Returns: VerificationResult(passed, execution_success, errors, output, execution_time)
+```
+
+### 8. `agent_hermes.py` — `GRGAgentHermes`
+**Main orchestrator (Hermes proxy version):**
+
+```python
+agent = GRGAgentHermes(config, llm_client)  # llm_client = HermesLLMClient()
+candidate = await agent.solve(task, max_iterations=5)
+# Returns best verified Candidate
+```
+
+**Agent Loop:**
+```
+1. PLAN: planner.create_plan(task) → strategies[]
+2. For each iteration (up to max_iterations):
+   a. For each strategy:
+      i. diversity.generate_variants() → prompt variants
+      ii. For each variant: llm_client.generate() → Candidate
+      iii. monitor.score_candidate() → GRG composite
+      iv. diversity.add_candidate() → pool management
+   b. Sort all candidates by GRG composite (desc)
+   c. Verify top 5 candidates → verified[]
+   d. Update trajectory.best_candidate
+   e. If verified and iteration >= 1: CONVERGED → return
+3. Return best candidate (verified or highest composite)
+```
+
+### 9. `hermes_skill.py` — `GRGAgentSkill`
+**Hermes plugin entry point:**
+
+```python
+# Auto-loaded by Hermes skill system
+skill = GRGAgentSkill(hermes_app, config_dict)
+
+# Commands handled:
+await skill.on_command("grg:solve", {"task": "...", "iterations": 5})
+await skill.on_command("grg:analyze", {"file": "path.py"})
+await skill.on_command("grg:config", {"action": "get"})
+await skill.on_command("grg:help", {})
+```
+
+**Skill Manifest** (`skill.yaml` + `SKILL_MANIFEST` in hermes_skill.py):
+- Name: `grg_agent`
+- Version: `1.0.0`
+- Commands: `grg:solve`, `grg:analyze`, `grg:config`, `grg:help`
+- Config schema: all GRGAgentConfig fields + `hermes_proxy_url`
+
+---
+
+## Configuration Reference
+
+### Via Hermes Skill Config
+```yaml
+# In Hermes config.yaml under skills.grg_agent:
+max_iterations: 5
+candidates_per_strategy: 3
+max_candidates: 15
+grg_window: 16
+grg_threshold_mult: 1.5
+alpha_critical: 0.1
+horizon_critical: 5.0
+composite_floor: 0.5
+composite_ceiling: 1.5
+diversity_temperature_range: [0.3, 1.5]
+diversity_min_cosine: 0.3
+diversity_max_candidates: 20
+temperature: 0.8
+top_p: 0.9
+max_tokens: 256
+verify_execution: true
+verify_timeout: 10
+hermes_proxy_url: "http://localhost:8080/v1"  # optional, defaults to env
+```
+
+### Via Environment Variable
+```bash
+export HERMES_PROXY_URL=http://your-hermes-proxy:8080/v1
+```
+
+### Via CLI (direct usage)
+```bash
+python -m examples.grg_agent.hermes_skill "task"  # uses env HERMES_PROXY_URL
+```
+
+---
+
+## Testing
+
+### Component Tests (No Proxy Required)
+```bash
+python -m examples.grg_agent.test_hermes
+```
+**Tests:**
+- `test_hermes_client` — Mock client interface
+- `test_grg_components` — Monitor, Diversity, Planner, Verifier
+- `test_agent_integration` — Full agent with mock client
+- `test_hermes_skill` — Skill manifest and entry point
+
+**Output:**
+```
+============================================================
+GRG AGENT HERMES COMPONENT TESTS
+============================================================
+Testing Hermes LLM Client interface...
+  ✓ Hermes client interface OK
+Testing GRG components...
+  Monitor: composite=0.452
+  ✓ GRG Monitor OK
+  Diversity: 3 variants
+  ✓ Diversity Controller OK
+  Planner: 1 strategies
+  ✓ Code Planner OK
+  Verifier: passed=True, execution=True
+  ✓ Code Verifier OK
+Testing agent integration...
+  Agent result: verified=True
+  Strategy: standard
+  Composite: 0.452
+  ✓ Agent integration OK
+Testing Hermes skill...
+  Skill manifest: grg_agent v1.0.0
+  Commands: ['grg:solve', 'grg:analyze', 'grg:config', 'grg:help']
+  ✓ Hermes skill OK
+
+============================================================
+ALL HERMES COMPONENT TESTS PASSED!
+============================================================
+```
+
+### Full Agent Test (Requires Local Model)
+```bash
+python -m examples.grg_agent.test_full_agent
+```
+Uses `LLMSkill` with local model (SmolLM2-360M-Instruct by default).
+
+### Integration Test Example (two_sum)
+```bash
+# With mock client (no proxy needed)
+python test_two_sum.py
+```
+**Result:**
+```
+Success: True
+Verified: True
+Strategy: standard
+Composite: 0.452
+Code:
+def two_sum(nums, target):
+    seen = {}
+    for i, num in enumerate(nums):
+        complement = target - num
+        if complement in seen:
+            return [seen[complement], i]
+        seen[num] = i
+    return []
+Stats: {'total_generations': 4, 'total_verifications': 4, 'total_iterations': 2, ...}
+```
+Converged in **2 iterations** with **4/4 candidates verified**.
+
+---
+
+## GRG Theory Background
+
+### Composite Confidence Formula
+```
+composite = p_token × α × (1 + max(0, Vα))
+```
+Where:
+- `p_token` = model probability (exp of mean logprob)
+- `α` = structural momentum (rate of change in token probabilities)
+- `Vα` = velocity of α (acceleration of structural change)
+
+### Collapse Detection
+- **Horizon** = tokens until α < `alpha_critical` (default 0.1)
+- **Collapsing** = horizon < `horizon_critical` (default 5.0)
+- **Stable** = α > 0 and not collapsing
+
+### Why This Works for Code
+- Small code models are **over-confident** (71% |logprob| ≈ 0)
+- GRG detects **coherence**, not correctness
+- **Trajectory confidence** = structural stability across tokens
+- **Selector mode** picks highest-composite candidate → 80% pass@1
+- **Constraint mode** kills diversity → worse results
+
+---
+
+## Integration with GRG Ecosystem
+
+### Reuses from `grg_inference`
+- `AlphaMomentumTracker` → `monitor.py`
+- `compute_structural_alpha` → `monitor.py`
+- `composite_confidence` → `monitor.py`
+
+### Reuses from `grg_trainers`
+- `LMWithValueHead` concept → `llm_skill.py`
+- LoRA setup patterns → `llm_skill.py`
+
+### New Components (Agent-Specific)
+- `DiversityController` — explicit diversity management
+- `CodePlanner` — task decomposition
+- `GRGAgent` / `GRGAgentHermes` — orchestration
+- `TrajectoryState` — persistent memory across iterations
+- `CodeVerifier` — execution verification
+
+---
+
+## Hermes Skill Packaging
+
+### Install as User Skill
+```bash
+mkdir -p ~/.hermes/skills/grg_agent
+cp -r examples/grg_agent/* ~/.hermes/skills/grg_agent/
+```
+
+### Skill Manifest (`skill.yaml`)
+```yaml
+name: grg_agent
+version: "1.0.0"
+description: "GRG-guided autonomous coding agent using Hermes LLM proxy"
+author: "GRG Team"
+license: "MIT"
+entry_point: "grg_agent.hermes_skill:GRGAgentSkill"
+config_schema:
+  max_iterations: {type: integer, default: 5}
+  candidates_per_strategy: {type: integer, default: 3}
+  # ... all GRGAgentConfig fields
+```
+
+### Commands Registered
+| Command | Description | Args |
+|---------|-------------|------|
+| `grg:solve` | Solve coding task | `task` (req), `iterations` (opt), `model` (opt) |
+| `grg:analyze` | Analyze code file | `file` (req) |
+| `grg:config` | Get/set config | `action` (get/set), `key`, `value` |
+| `grg:help` | Show help | — |
+
+---
+
+## Troubleshooting
+
+### "Connection error" on generation
+- Hermes proxy not running at `HERMES_PROXY_URL`
+- Check: `curl http://localhost:8080/v1/models`
+- Set correct proxy: `export HERMES_PROXY_URL=http://your-host:8080/v1`
+
+### No logprobs returned
+- Some models/proxies don't support logprobs
+- Agent falls back to dummy score (composite=0.5)
+- Use model with logprobs support for GRG scoring
+
+### Verification fails
+- Check `verify_timeout` (default 10s)
+- Complex code may need longer timeout
+- Disable with `verify_execution: false` for quick iteration
+
+### Skill not loading in Hermes
+- Check `~/.hermes/skills/grg_agent/` exists with `hermes_skill.py`
+- Restart Hermes after adding skill
+- Check Hermes logs for import errors
+
+---
+
+## Performance Notes
+
+| Metric | Typical Value |
+|--------|---------------|
+| Iterations to converge | 2-3 |
+| Generations per iteration | strategies × candidates_per_strategy |
+| Verification rate | ~80% of top candidates |
+| GRG composite range | 0.3 - 0.6 (verified code) |
+| Diversity (cosine) | 0.3 - 0.7 |
+| Total time (mock) | <1s for 3 iterations |
+| Total time (real proxy) | Depends on model latency |
+
+---
+
+## Future Enhancements
+
+- [ ] **Adaptive strategy selection** — learn which strategies work per task type
+- [ ] **GRG-guided training** — use composite as reward for RLHF
+- [ ] **Multi-model routing** — route to different models per strategy
+- [ ] **Persistent trajectory store** — resume across sessions
+- [ ] **Chainlit/UI integration** — visual trajectory dashboard
+- [ ] **Spec-Forge integration** — validated spec → GRG agent execution
+
+---
+
+## Related Documentation
+
+- `spec.md` — Technical specification
+- `SPEC_HERMES_SKILL.md` — Hermes skill packaging details
+- `grg-inference-pipeline` skill — GRG inference modes (constraint/selector)
+- `grg-training-pipeline` skill — Training with GRG objective
+- `grg-inference-monitoring` skill — Per-token collapse detection
+
+---
+
+## License
+
+MIT — Part of the GRG (Geometric Reasoning Governor) project.
