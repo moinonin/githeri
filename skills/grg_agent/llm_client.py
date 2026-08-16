@@ -249,7 +249,6 @@ class HermesProxyClient(BaseLLMClient):
 class OllamaClient(BaseLLMClient):
     """
     Ollama Client - Direct connection to local Ollama server.
-    Also works with any OpenAI-compatible API (LM Studio, etc.)
 
     Requires Ollama running at http://127.0.0.1:11434 (default)
     with models pulled (e.g., `ollama pull qwen2.5-coder:7b-instruct`).
@@ -259,18 +258,16 @@ class OllamaClient(BaseLLMClient):
         self,
         base_url: str = "http://127.0.0.1:11434/v1",
         default_model: str = "qwen2.5-coder:7b-instruct",
-        api_key: str = "ollama",
     ):
         self.base_url = base_url
         self.default_model = default_model
-        self.api_key = api_key
         self._client = None
         print(f"Ollama Client initialized: {base_url}, default model: {default_model}")
 
     def _get_client(self):
         if self._client is None:
             from openai import AsyncOpenAI
-            self._client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
+            self._client = AsyncOpenAI(base_url=self.base_url, api_key="ollama")
         return self._client
 
     async def generate(
@@ -412,7 +409,6 @@ class LLMClientFactory:
             return OllamaClient(
                 base_url=kwargs.get("base_url", "http://127.0.0.1:11434/v1"),
                 default_model=kwargs.get("default_model", "qwen2.5-coder:7b-instruct"),
-                api_key=kwargs.get("api_key", "ollama"),
             )
 
         else:

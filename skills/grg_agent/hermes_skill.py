@@ -64,7 +64,6 @@ class GRGAgentSkill:
         elif provider == "ollama":
             provider_kwargs['base_url'] = self.config.get('ollama_base_url', 'http://127.0.0.1:11434/v1')
             provider_kwargs['default_model'] = self.config.get('ollama_default_model', 'qwen2.5-coder:7b-instruct')
-            provider_kwargs['api_key'] = self.config.get('ollama_api_key', 'ollama')
 
         # Create LLM client
         llm_client = create_llm_client(provider, **provider_kwargs)

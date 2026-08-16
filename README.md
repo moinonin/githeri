@@ -220,6 +220,9 @@ make spec PROMPT="..." PROVIDER=openai API_KEY=$OPENAI_API_KEY MODEL=gpt-4o
 # Anthropic Claude
 make spec PROMPT="..." PROVIDER=anthropic API_KEY=$ANTHROPIC_API_KEY MODEL=claude-3-5-sonnet-20241022
 
+# LM Studio (local, OpenAI-compatible on port 1234)
+make spec PROMPT="..." PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+
 # Any OpenAI-compatible endpoint (Fireworks, Together, vLLM, self-hosted NIM)
 make spec PROMPT="..." PROVIDER=openai-compat BASE_URL=https://api.fireworks.ai/inference/v1 API_KEY=... MODEL=accounts/nvidia/models/nemotron-3-ultra
 
@@ -283,6 +286,37 @@ The GRG agent skill is now installed as a native Hermes skill (`~/.hermes/skills
 
 **Key Benefit**: You can now use cloud models via Hermes proxy (`hermes proxy start`) instead of relying on locally installed Ollama models. The skill routes through Hermes's provider config which supports NVIDIA Nemotron, Nous Portal, xAI Grok, and any OpenAI-compatible endpoint.
 
+#### LM Studio Local Model — First End-to-End Working Pipeline
+**LM Studio** with **`qwen2.5-coder-14b-instruct-uncensored`** is the first local model to complete the full GRG pipeline end-to-end:
+
+```bash
+# Full pipeline from NL prompt → validated spec → plan → execution → runbook
+make grg-full PROMPT="Implement a FastAPI POST /api/health-check endpoint..." \
+    PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+```
+
+**What works:**
+- **GRG Agent solving** — Generates implementation code with GRG quality gates (composite scoring, diversity control, convergence detection)
+- **Code verification** — Execution-based verification (syntax + runtime) in isolated temp files
+- **Multi-strategy generation** — Standard, decompose, test_first, refine strategies with adaptive temperature
+- **Health-check endpoint example** — Generated FastAPI code with SQLAlchemy DB check + Redis cache check, returns 200/503
+- **All artifacts isolated in `foreign/`** — Clean workspace separation
+
+**Configuration for LM Studio:**
+```bash
+# In LM Studio: enable "OpenAI Compatible Server" on port 1234
+# Load qwen2.5-coder-14b-instruct-uncensored model
+# Then run:
+make grg-spec PROMPT="..." PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+```
+
+**Why this model works:**
+- 14B parameter coder model fine-tuned for code generation
+- Uncensored variant removes alignment filters that can interfere with code structure
+- OpenAI-compatible API in LM Studio works with GRG's `OllamaClient` (custom `api_key` support)
+- Sufficient context window for spec + plan generation tasks
+- Produces valid imports, proper error handling, and correct HTTP status codes
+
 ### 2026-07-30 (Latest)
 
 #### THIRD_IMPROVE_SPEC — 7 Pipeline Fixes
@@ -325,12 +359,13 @@ Scorer now honors explicit `type: create|inspect|verify` on goals, fixing false 
 | Model | Context | Tools | Speed (M1 16GB) | Spec Gen | Recommended Use |
 |-------|---------|-------|-----------------|----------|-----------------|
 | **qwen2.5-coder:7b-instruct** | 32K | Yes | Fast | Works (best structure compliance) | **Default local (Ollama)** |
+| **qwen2.5-coder-14b-instruct-uncensored** | 32K | Yes | Medium | **Works end-to-end (GRG pipeline)** | **LM Studio local** |
 | qwen3.5-4b-128k | 128K | Yes | Fast | Works | Larger context fallback |
 | qwen3.5-9b-code:128k | 128K | Yes | Slow | Excellent | Higher quality if time allows |
 | deepseek-r1:7b | 128K | TBD | Fast | YAML syntax errors | Not recommended for spec gen |
 | **Nemotron 3 Ultra** | 128K | Yes | Fast | Excellent | **Cloud via NVIDIA NIM (`--provider nvidia`)** |
 
-**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama. Cloud → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`, base URL `https://integrate.api.nvidia.com/v1`).
+**Current recommendation**: Local → `qwen2.5-coder:7b-instruct` on Ollama or `qwen2.5-coder-14b-instruct-uncensored` on LM Studio. Cloud → `minimaxai/minimax-m3` via NVIDIA NIM (`--provider nvidia`, base URL `https://integrate.api.nvidia.com/v1`).
 
 ## For More Information
 

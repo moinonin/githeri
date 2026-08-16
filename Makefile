@@ -217,10 +217,14 @@ clean:
 # GRG Agent integration targets (L5)
 # Execute COMMAND_RUNWAY plans with GRG quality gates
 grg-spec:
-	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make grg-spec PROMPT="<feature>" OR make grg-spec PROMPT_FILE=path [PROVIDER=ollama|hermes]'; exit 2; fi
+	@if [ -z "$(PROMPT)" ] && [ -z "$(PROMPT_FILE)" ]; then echo 'Usage: make grg-spec PROMPT="<feature>" OR make grg-spec PROMPT_FILE=path [PROVIDER=ollama|hermes|lmstudio] [MODEL=...] [BASE_URL=...]'; exit 2; fi
 	@if [ -n "$(PROMPT_FILE)" ]; then PROMPT="$$(cat $(PROMPT_FILE))"; else PROMPT="$(PROMPT)"; fi
 	@echo "🚀 GRG: Generating validated spec from prompt..."
-	@$(PYTHON) scripts/grg_make_spec.py $(PROVIDER) "$$PROMPT"
+	@if [ "$(PROVIDER)" = "lmstudio" ]; then \
+		MODEL="$(MODEL)" BASE_URL="$(BASE_URL)" $(PYTHON) scripts/grg_make_spec.py ollama "$$PROMPT"; \
+	else \
+		$(PYTHON) scripts/grg_make_spec.py $(PROVIDER) "$$PROMPT"; \
+	fi
 
 grg-plan:
 	@if [ -z "$(SPEC)" ]; then echo 'Usage: make grg-plan SPEC=path/to/spec.yaml'; exit 2; fi

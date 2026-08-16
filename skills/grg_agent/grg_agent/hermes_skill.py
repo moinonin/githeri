@@ -62,8 +62,13 @@ class GRGAgentSkill:
             if proxy_url:
                 provider_kwargs['proxy_url'] = proxy_url
         elif provider == "ollama":
-            provider_kwargs['base_url'] = self.config.get('ollama_base_url', 'http://127.0.0.1:11434/v1')
-            provider_kwargs['default_model'] = self.config.get('ollama_default_model', 'qwen2.5-coder:7b-instruct')
+            provider_kwargs['base_url'] = self.config.get('ollama_base_url') or os.environ.get('BASE_URL', 'http://127.0.0.1:11434/v1')
+            provider_kwargs['default_model'] = self.config.get('ollama_default_model') or os.environ.get('MODEL', 'qwen2.5-coder:7b-instruct')
+            # Allow custom api_key for LM Studio
+            if 'api_key' in self.config:
+                provider_kwargs['api_key'] = self.config['api_key']
+            elif 'LMSTUDIO_API_KEY' in os.environ:
+                provider_kwargs['api_key'] = os.environ['LMSTUDIO_API_KEY']
 
         # Create LLM client
         llm_client = create_llm_client(provider, **provider_kwargs)
