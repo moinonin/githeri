@@ -85,8 +85,19 @@ GRG Agent:    GRG (Planner/Monitor/Diversity) → LLM as skill tool
 
 ### Prerequisites
 - Python 3.10+
-- Hermes running with LLM proxy (default: `http://localhost:8080/v1`)
+- Hermes running with LLM proxy (default: `http://localhost:8465/v1`)
 - Or set `HERMES_PROXY_URL` environment variable
+
+### Free Models (via Hermes Proxy)
+The Hermes proxy at `localhost:8465` provides access to many free models. Currently available free models include:
+- `poolside/laguna-s-2.1:free` — Code generation, Python
+- `poolside/laguna-xs-2.1:free` — Smaller code model
+- `tencent/hy3:free` — General purpose
+- `stepfun/step-3.7-flash:free` — Fast inference
+- `upstage/solar-pro4:free` — Strong reasoning
+- `meituan/longcat-2.0:free` — General purpose
+
+You can discover all available models: `curl http://localhost:8465/v1/models`
 
 ### Install as Hermes Skill
 ```bash
@@ -98,7 +109,7 @@ cp -r examples/grg_agent/* ~/.hermes/skills/grg_agent/
 ```
 
 ### Use in Hermes
-```
+```bash
 /grg:solve "def two_sum(nums, target): return indices of two numbers adding to target"
 /grg:analyze ./my_module.py
 /grg:config get
@@ -107,21 +118,22 @@ cp -r examples/grg_agent/* ~/.hermes/skills/grg_agent/
 
 ### Direct CLI Usage (for testing)
 ```bash
-# Requires running Hermes proxy at localhost:8080/v1
-export HERMES_PROXY_URL=http://localhost:8080/v1
-python -m examples.grg_agent.hermes_skill "def fibonacci(n): return nth fibonacci"
+# Requires running Hermes proxy
+export HERMES_PROXY_URL=http://localhost:8465/v1
+python -m grg_agent.hermes_skill "def fibonacci(n): return nth fibonacci"
 ```
 
 ### Run Component Tests (no proxy needed)
 ```bash
-python -m examples.grg_agent.test_hermes
+python -m grg_agent.test_hermes
+# Uses MockHermesClient — tests all components without API calls.
 ```
-Uses `MockHermesClient` — tests all components without API calls.
 
----
-
-## File Structure
-
+### Full Agent Test with Proxy
+```bash
+# With Hermes proxy running and free model
+export HERMES_PROXY_URL=http://localhost:8465/v1
+python -m grg_agent.hermes_skill "def binary_search(arr, target):" --model poolside/laguna-s-2.1:free
 ```
 examples/grg_agent/
 ├── __init__.py              # Exports all public classes
