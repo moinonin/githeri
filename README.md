@@ -151,6 +151,10 @@ make score-failed          # score invalid specs in data/failed_specs.jsonl
 make convert-chat              # default MIN_SCORE=0.75
 make convert-chat MIN_SCORE=0.9  # only high-quality specs
 
+# GRG Agent code training (generates verified code with real GRG scores)
+make generate-code          # cycles through all 475 SEED_PROMPTS
+make convert-code-chat      # converts passing examples to chat format
+
 # LoRA fine-tuning (requires Unsloth + GPU with 8GB VRAM)
 make train                     # outputs models/qwen3.5-4b-128k-specforge/
 
@@ -394,7 +398,36 @@ make grg-full PROMPT="Your feature" PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-i
 - **Speed**: ~260s/spec
 - **Best for**: Critical features requiring guaranteed working specs
 
-### 3. Hybrid Workflow (Best of Both)
+### 3. GRG Agent Code Training (NEW — Real GRG Scores + Verified Code)
+```bash
+# Generates verified code with real GRG composite scores (not dummy 0.5)
+# Uses Ollama specforge-128k-tools2:latest for real logprobs
+make generate-code          # cycles through all 475 SEED_PROMPTS
+make convert-code-chat      # converts passing examples to chat format
+```
+- **Success rate**: Variable (depends on prompt complexity)
+- **Speed**: ~30-60s/prompt (optimized: 1 strategy, 1 candidate)
+- **Output**: `data/training_data_code.jsonl` + `data/training_data_code_chat.jsonl`
+- **Key difference**: Produces **executable code** with **real GRG composite scores** (0.47-0.49) because the model provides logprobs
+- **Verification**: Syntax check + execution test (import + basic run)
+- **Best for**: Fine-tuning code generation models with GRG quality signals
+
+**Configuration** (in `scripts/generate_code_training_fast.py`):
+```python
+skill = create_skill(config={
+    'llm_provider': 'ollama',
+    'ollama_base_url': 'http://127.0.0.1:11434/v1',
+    'ollama_default_model': 'specforge-128k-tools2:latest',
+    'max_iterations': 2,           # Must be >=2 for convergence check
+    'temperature': 0.3,
+    'top_p': 0.9,
+    'max_tokens': 1024,
+    'candidates_per_strategy': 1,  # Speed optimization
+    'max_strategies': 1,           # Speed optimization
+})
+```
+
+### 4. Hybrid Workflow (Best of Both)
 ```bash
 # 1. Generate bulk corpus with specforge
 make generate N=100 PROVIDER=ollama MODEL="specforge-128k:latest" BASE_URL="http://localhost:11434"
@@ -404,13 +437,17 @@ make score MIN_SCORE=0.75
 
 # 3. Re-generate failed critical specs with GRG pipeline
 make grg-full PROMPT="..." PROVIDER=lmstudio MODEL="qwen2.5-coder-14b-instruct-uncensored" BASE_URL="http://localhost:1234/v1"
+
+# 4. Generate verified code for fine-tuning
+make generate-code
+make convert-code-chat
 ```
 
 ### Observed Failure Patterns (specforge-128k)
 The remaining ~30% failures are primarily:
 1. **Near-duplicate HTTP verifications** - multiple goals hitting same endpoint with same method
 2. **Missing `acceptance_criteria`** for CREATE goals
-3. **Placeholder values** in headers (e.g., `Authorization: ***Bearer ***`)
+3. **Placeholder values** in headers (e.g., `Authorization: *** ***`)
 4. **YAML block mapping errors** - CLI verification indentation issues
 
 ## For More Information

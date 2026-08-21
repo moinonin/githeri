@@ -4,9 +4,10 @@
 N ?= 2
 PYTHON = .venv/bin/python
 OUTPUT = data/training_data.jsonl
+ms ?= 0.0
 
 # LLM Provider settings (for generate, spec, spec-and-plan)
-PROVIDER ?= ollama
+PROVIDER ?= hermes
 MODEL ?=
 API_KEY ?=
 BASE_URL ?=
@@ -94,6 +95,18 @@ generate-random:
 generate-all:
 	@echo "🚀 Generating ALL seed prompts in order… [provider=$(PROVIDER)]"
 	$(PYTHON) -c "import sys; sys.path.insert(0, 'scripts'); from prompt_generator import SEED_PROMPTS; from run_pipeline import generate_batch; generate_batch(len(SEED_PROMPTS))"
+
+# GRG Agent Code Training (generates verified code with real GRG scores)
+# Uses Ollama specforge-128k-tools2:latest for real logprobs
+generate-code:
+	@echo "🤖 Generating verified code training data with GRG Agent..."
+	@$(PYTHON) scripts/generate_code_training_fast.py
+
+# Convert GRG code training data to chat format for fine-tuning
+# Only includes examples that passed verification (syntax + exec + GRG)
+convert-code-chat:
+	@echo "💬 Converting GRG code training data to chat format..."
+	@$(PYTHON) scripts/convert_code_to_chat.py
 
 i ?= 1
 check:

@@ -14,8 +14,8 @@ from runbook_scorer import runbook_score
 PROVIDER = "ollama"
 
 # Ollama
-OLLAMA_URL = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "deepseek-coder-v2:16b"
+OLLAMA_URL = "http://localhost:11434/v1/chat/completions"
+OLLAMA_MODEL = "specforge-128k-tools2:latest"
 
 # OpenAI / OpenAI-compatible (NVIDIA NIM, Together, Fireworks, etc.)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -607,19 +607,20 @@ def call_llm(system_prompt, user_prompt):
         raise ValueError(f"Unknown PROVIDER: {PROVIDER}")
 
 def _call_ollama(system_prompt, user_prompt):
+    """Ollama OpenAI-compatible API (requires Ollama 0.1.26+ with /v1 endpoints)."""
+    headers = {"Content-Type": "application/json"}
     payload = {
         "model": OLLAMA_MODEL,
-        "system": system_prompt,
-        "prompt": user_prompt,
-        "stream": False,
-        "options": {
-            "temperature": TEMPERATURE,
-            "num_predict": MAX_TOKENS,
-        },
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "temperature": TEMPERATURE,
+        "max_tokens": MAX_TOKENS,
     }
-    resp = requests.post(OLLAMA_URL, json=payload, timeout=OLLAMA_TIMEOUT)
+    resp = requests.post(OLLAMA_URL, headers=headers, json=payload, timeout=OLLAMA_TIMEOUT)
     resp.raise_for_status()
-    return resp.json()["response"]
+    return resp.json()["choices"][0]["message"]["content"]
 
 def _call_openai_compat(system_prompt, user_prompt):
     """OpenAI-compatible API (OpenAI, NVIDIA NIM, Together, Fireworks, Hermes Proxy, LM Studio, etc.)"""
@@ -629,8 +630,8 @@ def _call_openai_compat(system_prompt, user_prompt):
         model = NVIDIA_MODEL
     elif PROVIDER == "hermes":
         api_key = "hermes-proxy"  # placeholder, proxy ignores it
-        base_url = HERMES_PROXY_URL
-        model = HERMES_PROXY_MODEL
+        base_url = args.base_url if args.base_url else os.environ.get("HERMES_PROXY_URL", "http://localhost:8465/v1")
+        model = args.model if args.model else os.environ.get("HERMES_PROXY_MODEL", "poolside/laguna-s-2.1:free")
     elif PROVIDER == "lmstudio":
         api_key = LMSTUDIO_API_KEY
         base_url = LMSTUDIO_BASE_URL
@@ -746,6 +747,17 @@ def generate_one_pair(prompt=None):
         "validation_errors": validation_errors,
         "validated": spec_yaml is not None,
     }
+
+    # Compute runbook_score for fine-tuning pipeline compatibility
+    if spec_yaml is not None:
+        import yaml
+        try:
+            score, _ = runbook_score(yaml.safe_load(spec_yaml))
+            record["runbook_score"] = round(float(score), 4)
+        except Exception:
+            record["runbook_score"] = 0.0
+    else:
+        record["runbook_score"] = 0.0
 
     if spec_yaml is not None:
         with open(OUTPUT_FILE, "a") as f:

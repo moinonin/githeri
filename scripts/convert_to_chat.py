@@ -60,8 +60,17 @@ def main():
 
             prompt = pair.get("prompt", "").strip()
             spec_yaml = pair.get("spec_yaml", "").strip()
-            score = pair.get("runbook_score", 0.0)
-
+            score = pair.get("runbook_score", None)
+            
+            # Auto-compute runbook_score if missing (for legacy data)
+            if score is None:
+                import yaml
+                from scripts.runbook_scorer import runbook_score
+                try:
+                    score = runbook_score(yaml.safe_load(spec_yaml)) if spec_yaml else 0.0
+                except Exception:
+                    score = 0.0
+            
             if not prompt or not spec_yaml:
                 print("Warning: skipping entry with empty prompt or spec_yaml", file=sys.stderr)
                 continue
