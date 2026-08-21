@@ -417,8 +417,14 @@ class LLMClientFactory:
                 default_model=kwargs.get("default_model", "qwen2.5-coder:7b-instruct"),
             )
 
+        elif provider == "lmstudio":
+            return OllamaClient(
+                base_url=kwargs.get("base_url", "http://localhost:1234/v1"),
+                default_model=kwargs.get("default_model", "qwen2.5-coder-14b-instruct-uncensored"),
+            )
+
         else:
-            raise ValueError(f"Unknown provider: {provider}. Use 'hermes', 'ollama', or 'auto'")
+            raise ValueError(f"Unknown provider: {provider}. Use 'hermes', 'ollama', 'lmstudio', or 'auto'")
 
 
 # Backward compatibility

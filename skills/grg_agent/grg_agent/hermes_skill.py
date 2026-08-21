@@ -52,7 +52,7 @@ class GRGAgentSkill:
             verify_timeout=self.config.get('verify_timeout', 10),
         )
 
-        # Provider selection: "auto" | "hermes" | "ollama"
+        # Provider selection: "auto" | "hermes" | "ollama" | "lmstudio"
         provider = self.config.get('llm_provider', 'auto')
 
         # Provider-specific kwargs
@@ -64,6 +64,9 @@ class GRGAgentSkill:
         elif provider == "ollama":
             provider_kwargs['base_url'] = self.config.get('ollama_base_url', 'http://127.0.0.1:11434/v1')
             provider_kwargs['default_model'] = self.config.get('ollama_default_model', 'qwen2.5-coder:7b-instruct')
+        elif provider == "lmstudio":
+            provider_kwargs['base_url'] = self.config.get('lmstudio_base_url', 'http://localhost:1234/v1')
+            provider_kwargs['default_model'] = self.config.get('lmstudio_default_model', 'qwen2.5-coder-14b-instruct-uncensored')
 
         # Create LLM client
         llm_client = create_llm_client(provider, **provider_kwargs)
