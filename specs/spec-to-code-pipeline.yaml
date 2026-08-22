@@ -1,0 +1,554 @@
+task_id: spec-to-code-pipeline
+summary: "Two-stage inference pipeline: Spec Generator → Code Generator with separate models chained"
+depends_on: []
+business_rules:
+  - name: "Model Separation"
+    formula: "Spec Generator and Code Generator must be independently trained/fine-tuned models, not a single multi-task model"
+  - name: "Chainable Interface"
+    formula: "Spec Generator output must be valid COMMAND_RUNWAY YAML that Code Generator can consume as input"
+  - name: "Independent Deployment"
+    formula: "Each model must be independently deployable (separate model files, configs, endpoints)"
+  - name: "Deterministic Chaining"
+    formula: "Pipeline must produce identical results when run as chained vs individual steps"
+  - name: "Quality Gates"
+    formula: "Spec Generator output must pass validator before Code Generator executes; Code Generator output must pass syntax + execution verification"
+test_fixtures:
+  - name: "sample-prompts"
+    setup_commands:
+      - "python scripts/fixtures/create_sample_prompts.py --output test_prompts.json"
+    teardown_commands:
+      - "rm -f test_prompts.json"
+  - name: "spec-model-checkpoint"
+    setup_commands:
+      - "cp models/spec-generator-qwen7b-gguf/spec-generator.gguf /tmp/spec-model.gguf"
+    teardown_commands:
+      - "rm -f /tmp/spec-model.gguf"
+  - name: "code-model-checkpoint"
+    setup_commands:
+      - "cp models/code-generator-qwen7b-gguf/code-generator.gguf /tmp/code-model.gguf"
+    teardown_commands:
+      - "rm -f /tmp/code-model.gguf"
+environment:
+  packages:
+    - "pyyaml>=6.0"
+    - "fastapi>=0.100.0"
+    - "uvicorn>=0.23.0"
+    - "pydantic>=2.0"
+    - "pytest>=7.0"
+    - "httpx>=0.25.0"
+  env_vars:
+    SPEC_MODEL_PATH: "/models/spec-generator.gguf"
+    CODE_MODEL_PATH: "/models/code-generator.gguf"
+    SPEC_MODEL_DEVICE: "cpu"
+    CODE_MODEL_DEVICE: "cuda:0"
+    SPEC_MODEL_N_CTX: "8192"
+    CODE_MODEL_N_CTX: "8192"
+  services: []
+global_verification:
+  - "pytest tests/pipeline/ -v --tb=short"
+  - "python scripts/validate_pipeline_output.py --spec-output test_specs.yaml --code-output test_code.py"
+  - "bandit -r src/pipeline/ -f json -o bandit-report.json && jq '.results | map(select(.severity==\"HIGH\")) | length' bandit-report.json"
+local_goals:
+  - id: L1
+    description: "INSPECT: Verify existing model loader and inference infrastructure"
+    verification:
+      type: file_exists
+      path: "src/inference/"
+      expect:
+        exists: true
+  - id: L2
+    description: "CREATE: Spec Generator model wrapper with inference interface"
+    type: create
+    blueprint: |
+      from typing import Optional
+      from pydantic import BaseModel
+      from llama_cpp import Llama
+      
+      class SpecGeneratorInput(BaseModel):
+          prompt: str
+          max_tokens: int = 4096
+          temperature: float = 0.2
+          top_p: float = 0.9
+      
+      class SpecGeneratorOutput(BaseModel):
+          spec_yaml: str
+          valid: bool
+          validation_errors: list[str] = []
+      
+      class SpecGenerator:
+          def __init__(self, model_path: str, n_ctx: int = 8192, device: str = "cpu"):
+              self.llm = Llama(
+                  model_path=model_path,
+                  n_ctx=n_ctx,
+                  n_gpu_layers=-1 if device == "cuda" else 0,
+                  verbose=False
+              )
+          
+          def generate_spec(self, prompt: str, **kwargs) -> SpecGeneratorOutput:
+              system_prompt = (
+                  "You are a precise specification generator for COMMAND_RUNWAY methodology. "
+                  "Output ONLY a valid YAML document. No code, no commentary. "
+                  "Convert the given feature request into a valid executable specification "
+                  "with task_id, summary, local_goals (with verification steps), "
+                  "global_goals_refs, and context."
+              )
+              messages = [
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": prompt}
+              ]
+              
+              response = self.llm.create_chat_completion(
+                  messages=messages,
+                  max_tokens=kwargs.get("max_tokens", 4096),
+                  temperature=kwargs.get("temperature", 0.2),
+                  top_p=kwargs.get("top_p", 0.9),
+                  stop=["</yaml>", "```"]
+              )
+              
+              raw_output = response["choices"][0]["message"]["content"]
+              spec_yaml = self._extract_yaml(raw_output)
+              
+              # Validate spec
+              from scripts.validator import validate_spec
+              errors = validate_spec(spec_yaml)
+              
+              return SpecGeneratorOutput(
+                  spec_yaml=spec_yaml,
+                  valid=len(errors) == 0,
+                  validation_errors=errors
+              )
+          
+          def _extract_yaml(self, text: str) -> str:
+              import re
+              match = re.search(r"```yaml\s*(.*?)\s*```", text, re.DOTALL)
+              if match:
+                  return match.group(1).strip()
+              return text.strip()
+    verification:
+      type: file_exists
+      path: "src/pipeline/spec_generator.py"
+      expect:
+        content_contains: ["class SpecGenerator", "generate_spec", "validate_spec"]
+    acceptance_criteria:
+      - test: "SpecGenerator loads model and generates valid YAML for sample prompt"
+        steps: "python -c 'from src.pipeline.spec_generator import SpecGenerator; g = SpecGenerator(\"/tmp/spec-model.gguf\"); r = g.generate_spec(\"Add a GET /health endpoint\"); assert r.valid'"
+      - test: "SpecGenerator output passes validator for 10 sample prompts"
+        steps: "python scripts/test_spec_generator.py --prompts test_prompts.json --model /tmp/spec-model.gguf --threshold 0.9"
+  - id: L3
+    description: "CREATE: Code Generator model wrapper with inference interface"
+    type: create
+    blueprint: |
+      from typing import Optional
+      from pydantic import BaseModel
+      from llama_cpp import Llama
+      
+      class CodeGeneratorInput(BaseModel):
+          spec_yaml: str
+          max_tokens: int = 4096
+          temperature: float = 0.3
+          top_p: float = 0.9
+      
+      class CodeGeneratorOutput(BaseModel):
+          code: str
+          verified: bool
+          verification_errors: list[str] = []
+      
+      class CodeGenerator:
+          def __init__(self, model_path: str, n_ctx: int = 8192, device: str = "cuda"):
+              self.llm = Llama(
+                  model_path=model_path,
+                  n_ctx=n_ctx,
+                  n_gpu_layers=-1 if device == "cuda" else 0,
+                  verbose=False
+              )
+          
+          def generate_code(self, spec_yaml: str, **kwargs) -> CodeGeneratorOutput:
+              system_prompt = (
+                  "You are a Python expert. Generate clean, correct, production-ready Python code. "
+                  "Include all necessary imports, type hints, docstrings, and handle edge cases. "
+                  "Output ONLY the Python code. No markdown, no commentary, no prose."
+              )
+              
+              user_prompt = (
+                  "Implement the following COMMAND_RUNWAY specification as executable Python code:\n\n"
+                  f"```yaml\n{spec_yaml}\n```\n\n"
+                  "Requirements:\n"
+                  "- Python 3.10+\n"
+                  "- Type hints\n"
+                  "- Docstrings\n"
+                  "- Edge case handling\n"
+                  "- Production ready"
+              )
+              
+              messages = [
+                  {"role": "system", "content": system_prompt},
+                  {"role": "user", "content": user_prompt}
+              ]
+              
+              response = self.llm.create_chat_completion(
+                  messages=messages,
+                  max_tokens=kwargs.get("max_tokens", 4096),
+                  temperature=kwargs.get("temperature", 0.3),
+                  top_p=kwargs.get("top_p", 0.9),
+                  stop=["```"]
+              )
+              
+              code = response["choices"][0]["message"]["content"]
+              code = self._extract_code(code)
+              
+              # Verify code
+              from scripts.verify_code import verify_code
+              verify_result = verify_code(code)
+              
+              return CodeGeneratorOutput(
+                  code=code,
+                  verified=verify_result["syntax_ok"] and verify_result["exec_ok"],
+                  verification_errors=[verify_result["error"]] if verify_result["error"] else []
+              )
+          
+          def _extract_code(self, text: str) -> str:
+              import re
+              code_blocks = re.findall(r'```python\s*(.*?)\s*```', text, re.DOTALL)
+              if code_blocks:
+                  return max(code_blocks, key=len).strip()
+              return text.strip()
+    verification:
+      type: file_exists
+      path: "src/pipeline/code_generator.py"
+      expect:
+        content_contains: ["class CodeGenerator", "generate_code", "verify_code"]
+    acceptance_criteria:
+      - test: "CodeGenerator loads model and generates executable code for sample spec"
+        steps: "python -c 'from src.pipeline.code_generator import CodeGenerator; g = CodeGenerator(\"/tmp/code-model.gguf\"); r = g.generate_code(open(\"test_specs.yaml\").read()); assert r.verified'"
+      - test: "CodeGenerator output passes syntax and execution verification for 10 sample specs"
+        steps: "python scripts/test_code_generator.py --specs test_specs.yaml --model /tmp/code-model.gguf --threshold 0.9"
+  - id: L4
+    description: "CREATE: Pipeline orchestrator that chains Spec Generator → Code Generator"
+    type: create
+    blueprint: |
+      from typing import Optional
+      from pydantic import BaseModel
+      from src.pipeline.spec_generator import SpecGenerator, SpecGeneratorInput
+      from src.pipeline.code_generator import CodeGenerator, CodeGeneratorInput
+      
+      class PipelineInput(BaseModel):
+          prompt: str
+          spec_model_path: str
+          code_model_path: str
+          spec_kwargs: dict = {}
+          code_kwargs: dict = {}
+      
+      class PipelineOutput(BaseModel):
+          spec_yaml: str
+          spec_valid: bool
+          code: str
+          code_verified: bool
+          spec_errors: list[str] = []
+          code_errors: list[str] = []
+      
+      class SpecToCodePipeline:
+          def __init__(
+              self,
+              spec_model_path: str,
+              code_model_path: str,
+              spec_device: str = "cpu",
+              code_device: str = "cuda"
+          ):
+              self.spec_generator = SpecGenerator(spec_model_path, device=spec_device)
+              self.code_generator = CodeGenerator(code_model_path, device=code_device)
+          
+          def run(self, prompt: str, **kwargs) -> PipelineOutput:
+              # Stage 1: Generate spec from natural language
+              spec_input = SpecGeneratorInput(prompt=prompt, **kwargs.get("spec_kwargs", {}))
+              spec_result = self.spec_generator.generate_spec(spec_input.prompt, **spec_input.dict())
+              
+              if not spec_result.valid:
+                  return PipelineOutput(
+                      spec_yaml=spec_result.spec_yaml,
+                      spec_valid=False,
+                      code="",
+                      code_verified=False,
+                      spec_errors=spec_result.validation_errors,
+                      code_errors=["Spec generation failed, code generation skipped"]
+                  )
+              
+              # Stage 2: Generate code from validated spec
+              code_input = CodeGeneratorInput(spec_yaml=spec_result.spec_yaml, **kwargs.get("code_kwargs", {}))
+              code_result = self.code_generator.generate_code(code_input.spec_yaml, **code_input.dict())
+              
+              return PipelineOutput(
+                  spec_yaml=spec_result.spec_yaml,
+                  spec_valid=True,
+                  code=code_result.code,
+                  code_verified=code_result.verified,
+                  spec_errors=[],
+                  code_errors=code_result.verification_errors
+              )
+      
+      # Convenience function for direct use
+      def generate_code_from_prompt(
+          prompt: str,
+          spec_model_path: str,
+          code_model_path: str,
+          spec_device: str = "cpu",
+          code_device: str = "cuda"
+      ) -> PipelineOutput:
+          pipeline = SpecToCodePipeline(
+              spec_model_path=spec_model_path,
+              code_model_path=code_model_path,
+              spec_device=spec_device,
+              code_device=code_device
+          )
+          return pipeline.run(prompt)
+    verification:
+      type: file_exists
+      path: "src/pipeline/pipeline.py"
+      expect:
+        content_contains: ["class SpecToCodePipeline", "run", "generate_code_from_prompt"]
+    acceptance_criteria:
+      - test: "Pipeline generates valid spec then executable code for sample prompt"
+        steps: "python -c 'from src.pipeline.pipeline import generate_code_from_prompt; r = generate_code_from_prompt(\"Add a GET /health endpoint\", \"/tmp/spec-model.gguf\", \"/tmp/code-model.gguf\"); assert r.spec_valid and r.code_verified'"
+      - test: "Pipeline handles spec validation failure gracefully"
+        steps: "python scripts/test_pipeline_failure.py --model /tmp/spec-model.gguf"
+  - id: L5
+    description: "CREATE: FastAPI endpoint for pipeline inference"
+    type: create
+    blueprint: |
+      from fastapi import FastAPI, HTTPException
+      from pydantic import BaseModel
+      from src.pipeline.pipeline import SpecToCodePipeline
+      
+      app = FastAPI(title="Spec-to-Code Pipeline API")
+      
+      # Global pipeline instance (initialized on startup)
+      pipeline: Optional[SpecToCodePipeline] = None
+      
+      class GenerateRequest(BaseModel):
+          prompt: str
+          spec_kwargs: dict = {}
+          code_kwargs: dict = {}
+      
+      class GenerateResponse(BaseModel):
+          spec_yaml: str
+          spec_valid: bool
+          code: str
+          code_verified: bool
+          spec_errors: list[str] = []
+          code_errors: list[str] = []
+      
+      @app.on_event("startup")
+      async def startup():
+          import os
+          global pipeline
+          spec_path = os.environ.get("SPEC_MODEL_PATH", "/models/spec-generator.gguf")
+          code_path = os.environ.get("CODE_MODEL_PATH", "/models/code-generator.gguf")
+          spec_device = os.environ.get("SPEC_MODEL_DEVICE", "cpu")
+          code_device = os.environ.get("CODE_MODEL_DEVICE", "cuda")
+          
+          pipeline = SpecToCodePipeline(
+              spec_model_path=spec_path,
+              code_model_path=code_path,
+              spec_device=spec_device,
+              code_device=code_device
+          )
+      
+      @app.post("/generate", response_model=GenerateResponse)
+      async def generate(request: GenerateRequest):
+          if pipeline is None:
+              raise HTTPException(status_code=503, detail="Pipeline not initialized")
+          
+          try:
+              result = pipeline.run(request.prompt, spec_kwargs=request.spec_kwargs, code_kwargs=request.code_kwargs)
+              return GenerateResponse(**result.dict())
+          except Exception as e:
+              raise HTTPException(status_code=500, detail=str(e))
+      
+      @app.get("/health")
+      async def health():
+          return {"status": "healthy", "pipeline_ready": pipeline is not None}
+      
+      if __name__ == "__main__":
+          import uvicorn
+          uvicorn.run(app, host="0.0.0.0", port=8000)
+    verification:
+      type: http
+      method: GET
+      url: "http://localhost:8000/health"
+      expect:
+        status: 200
+        json_schema:
+          type: object
+          properties:
+            status: {type: string, enum: ["healthy"]}
+            pipeline_ready: {type: boolean}
+          required: [status, pipeline_ready]
+    acceptance_criteria:
+      - test: "API starts and responds to health check"
+        steps: "uvicorn src.pipeline.api:app --port 8000 & sleep 2 && curl -s http://localhost:8000/health | jq '.status == \"healthy\"'"
+      - test: "API generates valid spec and code for test prompt"
+        steps: "curl -s -X POST http://localhost:8000/generate -H 'Content-Type: application/json' -d '{\"prompt\": \"Add a GET /health endpoint\"}' | jq '.spec_valid and .code_verified'"
+  - id: L6
+    description: "CREATE: Verification utilities for code syntax and execution"
+    type: create
+    blueprint: |
+      import subprocess
+      import tempfile
+      import sys
+      from typing import Optional
+      
+      def verify_code(code: str) -> dict:
+          """Run syntax + execution verification on Python code."""
+          result = {"syntax_ok": False, "exec_ok": False, "error": None}
+          
+          # 1. Syntax check
+          try:
+              compile(code, '<string>', 'exec')
+              result["syntax_ok"] = True
+          except SyntaxError as e:
+              result["error"] = f"Syntax: {e}"
+              return result
+          
+          # 2. Execution test
+          with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+              f.write(code + "\n\nprint('IMPORT_OK')\n")
+              temp_path = f.name
+          
+          try:
+              proc = subprocess.run(
+                  [sys.executable, temp_path],
+                  capture_output=True,
+                  text=True,
+                  timeout=10
+              )
+              result["exec_ok"] = proc.returncode == 0 and "IMPORT_OK" in proc.stdout
+              if not result["exec_ok"]:
+                  result["error"] = proc.stderr or proc.stdout
+          except subprocess.TimeoutExpired:
+              result["error"] = "Execution timeout"
+          finally:
+              import os
+              os.unlink(temp_path)
+          
+          return result
+      
+      def extract_yaml(text: str) -> str:
+          """Extract YAML from markdown fences or plain text."""
+          import re
+          match = re.search(r'```yaml\s*(.*?)\s*```', text, re.DOTALL)
+          if match:
+              return match.group(1).strip()
+          return text.strip()
+    verification:
+      type: file_exists
+      path: "src/pipeline/verify_code.py"
+      expect:
+        content_contains: ["verify_code", "extract_yaml", "subprocess.run"]
+    acceptance_criteria:
+      - test: "verify_code passes for valid code"
+        steps: "python -c 'from src.pipeline.verify_code import verify_code; r = verify_code(\"def add(a,b): return a+b\"); assert r[\"syntax_ok\"] and r[\"exec_ok\"]'"
+      - test: "verify_code fails for invalid syntax"
+        steps: "python -c 'from src.pipeline.verify_code import verify_code; r = verify_code(\"def add(a,b: return a+b\"); assert not r[\"syntax_ok\"]'"
+  - id: L7
+    description: "CREATE: Test suite for end-to-end pipeline validation"
+    type: create
+    blueprint: |
+      import pytest
+      import json
+      from src.pipeline.pipeline import SpecToCodePipeline, generate_code_from_prompt
+      from src.pipeline.spec_generator import SpecGenerator
+      from src.pipeline.code_generator import CodeGenerator
+      
+      @pytest.fixture(scope="session")
+      def spec_model_path():
+          import os
+          path = os.environ.get("SPEC_MODEL_PATH", "/tmp/spec-model.gguf")
+          assert os.path.exists(path), f"Spec model not found at {path}"
+          return path
+      
+      @pytest.fixture(scope="session")
+      def code_model_path():
+          import os
+          path = os.environ.get("CODE_MODEL_PATH", "/tmp/code-model.gguf")
+          assert os.path.exists(path), f"Code model not found at {path}"
+          return path
+      
+      def test_spec_generator_loads(spec_model_path):
+          generator = SpecGenerator(spec_model_path)
+          assert generator.llm is not None
+      
+      def test_code_generator_loads(code_model_path):
+          generator = CodeGenerator(code_model_path)
+          assert generator.llm is not None
+      
+      def test_pipeline_generates_valid_spec(spec_model_path):
+          generator = SpecGenerator(spec_model_path)
+          result = generator.generate_spec("Add a GET /health endpoint")
+          assert result.valid, f"Spec validation failed: {result.validation_errors}"
+          assert "task_id:" in result.spec_yaml
+          assert "local_goals:" in result.spec_yaml
+      
+      def test_pipeline_generates_executable_code(spec_model_path, code_model_path):
+          result = generate_code_from_prompt(
+              "Add a GET /health endpoint that returns 200 OK",
+              spec_model_path,
+              code_model_path
+          )
+          assert result.spec_valid, f"Spec invalid: {result.spec_errors}"
+          assert result.code_verified, f"Code verification failed: {result.code_errors}"
+          assert "FastAPI" in result.code or "fastapi" in result.code.lower()
+      
+      def test_pipeline_handles_invalid_prompt(spec_model_path, code_model_path):
+          result = generate_code_from_prompt(
+              "xyz nonsense prompt that should fail validation",
+              spec_model_path,
+              code_model_path
+          )
+          # Should handle gracefully - either spec invalid or code not verified
+          assert not result.spec_valid or not result.code_verified
+      
+      def test_end_to_end_search_suggestions(spec_model_path, code_model_path):
+          prompt = (
+              "Implement a GET /search-suggestions endpoint that:\n"
+              "- Takes query param 'q' (min 2 chars)\n"
+              "- Returns up to 10 suggestions from a predefined list\n"
+              "- Returns 200 with JSON array of suggestions\n"
+              "- Returns 400 if query too short"
+          )
+          result = generate_code_from_prompt(prompt, spec_model_path, code_model_path)
+          assert result.spec_valid, f"Spec invalid: {result.spec_errors}"
+          assert result.code_verified, f"Code verification failed: {result.code_errors}"
+          
+          # Verify code actually runs
+          import subprocess
+          import tempfile
+          with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+              f.write(result.code + "\n\nif __name__ == '__main__': print('OK')\n")
+              temp_path = f.name
+          
+          try:
+              proc = subprocess.run(
+                  ["python", temp_path],
+                  capture_output=True,
+                  text=True,
+                  timeout=10
+              )
+              assert proc.returncode == 0, f"Code execution failed: {proc.stderr}"
+          finally:
+              import os
+              os.unlink(temp_path)
+    verification:
+      type: file_exists
+      path: "tests/pipeline/test_pipeline.py"
+      expect:
+        content_contains: ["pytest", "SpecToCodePipeline", "generate_code_from_prompt", "spec_valid", "code_verified"]
+    acceptance_criteria:
+      - test: "Full test suite passes"
+        steps: "SPEC_MODEL_PATH=/models/spec-generator.gguf CODE_MODEL_PATH=/models/code-generator.gguf pytest tests/pipeline/ -v --tb=short"
+      - test: "At least 80% of test cases pass"
+        steps: "SPEC_MODEL_PATH=/models/spec-generator.gguf CODE_MODEL_PATH=/models/code-generator.gguf pytest tests/pipeline/ --tb=line 2>&1 | grep -E 'passed|failed' | head -1"
+global_goals_refs: ["G1", "G3", "G7", "G13"]
+context:
+  language: Python
+  framework: FastAPI
+  orm: None
+  test_framework: pytest
