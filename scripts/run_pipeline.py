@@ -257,6 +257,7 @@ SYSTEM_PROMPT = (
     "   http allows: status, body_regex, body_contains, json_schema, headers_contain, content_type.\n"
     "   cli allows: exit_code, stdout_regex, stdout_contains, stdout_lines_min.\n"
     "5. NEVER start a YAML value with @, *, &, !, %, #, |, >, or backtick without quotes.\n"
+    "6. DO NOT generate arbitrary bash commands to create or edit code (like echo \"import pytest\" >> tests/...) in any field. Let the execution engine handle writing code via the blueprint.\n"
     "</anti_patterns>\n"
     "\n"
     "<examples>\n"
@@ -359,7 +360,7 @@ def _call_anthropic(system_prompt, user_prompt):
 # -------------------- CORE GENERATION --------------------
 
 
-def generate_one_pair(prompt=None):
+def generate_one_pair(prompt=None, max_retries=None):
     """Generate one spec from a single prompt.
 
     If `prompt` is None, picks a random seed prompt (the batch/training path).
@@ -368,6 +369,8 @@ def generate_one_pair(prompt=None):
     Returns a dict with: prompt, spec_yaml, validation_errors, attempt_count
     The spec is ALWAYS saved (to training_data.jsonl if valid, failed_specs.jsonl if not).
     """
+    if max_retries is None:
+        max_retries = MAX_RETRIES
     original_prompt = prompt if prompt is not None else generate_prompt()
     prompt = original_prompt
 
@@ -376,7 +379,7 @@ def generate_one_pair(prompt=None):
     attempt = 1
     cleaned_yaml = None
 
-    for attempt in range(1, MAX_RETRIES + 1):
+    for attempt in range(1, max_retries + 1):
         try:
             raw_yaml = call_llm(SYSTEM_PROMPT, prompt)
         except Exception as e:
@@ -453,7 +456,7 @@ def generate_one_pair(prompt=None):
     return record
 
 
-def generate_batch(count):
+def generate_batch(count, max_retries=None):
     from tqdm import tqdm
 
     print("\U0001f680 Generating {0} prompt-spec pairs... [provider={1}]\n".format(count, PROVIDER))
@@ -466,7 +469,7 @@ def generate_batch(count):
     pbar.set_postfix_str("valid=0 fail=0")
 
     while created + failed < count:
-        res = generate_one_pair()
+        res = generate_one_pair(max_retries=max_retries)
         pbar.update(1)
         if res.get("validated"):
             created += 1
@@ -500,6 +503,7 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=0.2, help="Sampling temperature")
     parser.add_argument("--max-tokens", type=int, default=2048, help="Max tokens in response")
     parser.add_argument("--timeout", type=int, default=300, help="LLM request timeout in seconds")
+    parser.add_argument("--max-retries", type=int, default=None, help="Max retry attempts for validation (default: from config)")
     args = parser.parse_args()
 
     # Override config from CLI args
@@ -544,12 +548,12 @@ if __name__ == "__main__":
         TEMPERATURE = args.temperature
     if args.max_tokens:
         MAX_TOKENS = args.max_tokens
-    if args.timeout:
-        OLLAMA_TIMEOUT = args.timeout
+    if args.max_retries is not None:
+        MAX_RETRIES = args.max_retries
 
     if args.prompt:
         print("\U0001f680 Processing fresh prompt: {0}...\n".format(args.prompt[:80]))
-        result = generate_one_pair(prompt=args.prompt)
+        result = generate_one_pair(prompt=args.prompt, max_retries=args.max_retries)
         if result.get("validated"):
             print("\U0001f3c1 Done. Spec saved to {0}".format(OUTPUT_FILE))
             sys.exit(0)
@@ -558,4 +562,4 @@ if __name__ == "__main__":
             sys.exit(1)
     else:
         n = args.batch if args.batch else (int(sys.argv[1]) if len(sys.argv) > 1 else 10)
-        generate_batch(n)
+        generate_batch(n, max_retries=args.max_retries)
